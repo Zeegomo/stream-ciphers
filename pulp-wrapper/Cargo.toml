@@ -1,0 +1,15 @@
+[package]
+name = "pulp-wrapper"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+cty = "*"
+cipher = "*"
+chacha20 = { path = "../chacha20" }
+chacha20_orig = { package = "chacha20", version = "*" }
