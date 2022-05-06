@@ -18,6 +18,9 @@ repository = "https://github.com/RustCrypto/stream-ciphers"
 keywords = ["crypto", "stream-cipher", "chacha8", "chacha12", "xchacha20"]
 categories = ["cryptography", "no-std"]
 
+[lib]
+crate-type = ["staticlib", "lib"]
+
 [dependencies]
 cfg-if = "1"
 cipher = "0.4.2"
