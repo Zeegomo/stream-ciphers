@@ -314,3 +314,37 @@ impl<R: Unsigned> Drop for ChaChaCore<R> {
 #[cfg(feature = "zeroize")]
 #[cfg_attr(docsrs, doc(cfg(feature = "zeroize")))]
 impl<R: Unsigned> ZeroizeOnDrop for ChaChaCore<R> {}
+
+
+
+/// ChaCha20 encrypt function
+#[no_mangle]
+pub extern "C" fn encrypt(
+    data: *mut u8,
+    len: usize,
+    key: *const u8,
+    l1_alloc: *mut u8,
+    l1_alloc_len: usize,
+) {
+    let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
+    let wrapper = pulp_wrapper::PulpWrapper::new(data, len, l1_alloc, l1_alloc_len, move || {
+        ChaCha20::new(key, Nonce::from_slice(&[0u8; 12]))
+    });
+    wrapper.run();
+}
+
+// #[no_mangle]
+// pub extern "C" fn encrypt_serial(data: *mut u8, len: usize, key: *const u8) {
+//     let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
+//     let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
+//     let mut chacha = ChaCha20::new(key, Nonce::from_slice(&[0u8; 12]));
+//     chacha.apply_keystream(data);
+// }
+
+// #[no_mangle]
+// pub extern "C" fn encrypt_serial_orig(data: *mut u8, len: usize, key: *const u8) {
+//     let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
+//     let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
+//     let mut chacha = chacha20_orig::ChaCha20::new(key, Nonce::from_slice(&[0u8; 12]));
+//     chacha.apply_keystream(data);
+// }
