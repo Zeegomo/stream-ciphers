@@ -1,8 +1,8 @@
-CORES ?= 1
+CORES ?= 4
 
 rust_lib:
-	CORES=${CORES} cargo build --manifest-path ../pulp-wrapper/Cargo.toml --target riscv32imc-unknown-none-elf --no-default-features --release
-	cd ../target/riscv32imc-unknown-none-elf/release && ar x libpulp_wrapper.a
+	CORES=${CORES} cargo build --manifest-path ../chacha20/Cargo.toml --target riscv32imc-unknown-none-elf --no-default-features --release
+	cd ../target/riscv32imc-unknown-none-elf/release && ar x libchacha20.a
 	
 	
 

@@ -122,7 +122,7 @@ dependencies = [
 [[package]]
 name = "pulp_sdk_rust"
 version = "0.1.0"
-source = "git+https://github.com/Zeegomo/pulp-sdk-rust#798db4186b36c632efb148737ab0bc3858f1292e"
+source = "git+https://github.com/Zeegomo/pulp-sdk-rust#2937a1328187921c0abc384ba7570476fc252509"
 dependencies = [
  "cty",
 ]

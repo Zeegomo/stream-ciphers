@@ -333,13 +333,14 @@ pub extern "C" fn encrypt(
     wrapper.run();
 }
 
-// #[no_mangle]
-// pub extern "C" fn encrypt_serial(data: *mut u8, len: usize, key: *const u8) {
-//     let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
-//     let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
-//     let mut chacha = ChaCha20::new(key, Nonce::from_slice(&[0u8; 12]));
-//     chacha.apply_keystream(data);
-// }
+#[no_mangle]
+pub extern "C" fn encrypt_serial(data: *mut u8, len: usize, key: *const u8) {
+    use cipher::StreamCipher;
+    let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
+    let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
+    let mut chacha = ChaCha20::new(key, Nonce::from_slice(&[0u8; 12]));
+    chacha.apply_keystream(data);
+}
 
 // #[no_mangle]
 // pub extern "C" fn encrypt_serial_orig(data: *mut u8, len: usize, key: *const u8) {
