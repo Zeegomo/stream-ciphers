@@ -50,8 +50,19 @@ fn run_rounds<R: Unsigned>(state: &[u32; STATE_WORDS]) -> [u32; STATE_WORDS] {
 }
 
 /// The ChaCha20 quarter round function
+#[allow(clippy::too_many_arguments)]
 #[inline(always)]
-fn quarter_round(a: usize, b: usize, c: usize, d: usize, aa: usize, bb: usize, cc: usize, dd: usize, state: &mut [u32; STATE_WORDS]) {
+fn quarter_round(
+    a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+    aa: usize,
+    bb: usize,
+    cc: usize,
+    dd: usize,
+    state: &mut [u32; STATE_WORDS],
+) {
     let mut sa = state[a];
     let mut sb = state[b];
     let mut sc = state[c];

@@ -11,5 +11,4 @@ crate-type = ["staticlib"]
 [dependencies]
 cty = "*"
 cipher = "*"
-chacha20 = { path = "../chacha20" }
-chacha20_orig = { package = "chacha20", version = "*" }
+pulp_sdk_rust = { git = " https://github.com/Zeegomo/pulp-sdk-rust" }
