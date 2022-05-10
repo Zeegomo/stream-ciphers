@@ -21,6 +21,7 @@ use core::panic::PanicInfo;
 
 #[panic_handler]
 fn panic_handler(_info: &PanicInfo) -> ! {
+    unsafe { abort_all() };
     loop {}
 }
 
@@ -77,24 +78,28 @@ impl<C: StreamCipher + StreamCipherSeek, F: Fn() -> C> PulpWrapper<C, F> {
         // this means that we have to fit BLOCKS_PER_ROUND * BLOCK_SIZE * CORES * 3 bytes in L1 cache.
         // Since ChaCha20 operates on 512 byte blocks and assuming all 8 cores active and 64KiB of L1 cache,
         // BLOCKS_PER_ROUND have to be at most 5, leaving some space for core stacks;
-        let mut buf = DmaBuf::new(source, len, l1_alloc, l1_alloc_len);
-        let round_buf_len = unsafe { buf.get_work_buf().len() };
-        let rounds = len / round_buf_len;
+        let mut buf = DmaBuf::new(source, len, l1_alloc, l1_alloc_len, CORES);
+        let round_buf_len = buf.work_buf_len();
+        let full_rounds = len / round_buf_len;
+        let base = core_id * round_buf_len / CORES;
         assert_eq!(round_buf_len % (BLOCK_SIZE * CORES), 0);
-        assert_eq!(len % round_buf_len, 0);
-        let core_buf_size = round_buf_len / CORES;
-        assert_eq!(core_buf_size % BLOCK_SIZE, 0);
-        assert_eq!(rounds, 5);
-        for round in 0..rounds {
-            let round_buf = unsafe { buf.get_work_buf() };
-            let base = core_id * core_buf_size;
-            let buffer = &mut round_buf[base..base + core_buf_size];
-            let past = round * round_buf_len;
+        //assert_eq!(len % round_buf_len, 0);
+        let mut past = 0;
+        for _ in 0..full_rounds {
+            let mut core_round_buf = unsafe { buf.get_work_buf() };
             cipher.seek(base + past);
-            cipher.apply_keystream(buffer);
-
+            cipher.apply_keystream(&mut core_round_buf);
+            past += round_buf_len;
             buf.advance();
         }
+
+        if len > past {
+            let mut core_round_buf = unsafe { buf.get_work_buf() };
+            cipher.seek(base + past);
+            cipher.apply_keystream(&mut core_round_buf);
+            buf.advance();
+        }
+
 
         buf.flush();
     }

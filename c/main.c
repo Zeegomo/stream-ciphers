@@ -6,7 +6,7 @@
 #define HOTTING 1
 #define REPEAT  3
 #define STACK_SIZE      2048
-#define LEN             (14336*5)
+#define LEN             (14336*5 -1)
 #define BUF_LEN             (14336*3)
 
 
@@ -70,22 +70,22 @@ void encrypt_serial_orig(char *data, size_t len, char *key);
 static void cluster_entry(void *arg)
 {
 //  // init performance counters
-     //INIT_STATS();
+     INIT_STATS();
 
 //   // executing the code multiple times to perform average statistics
-  //   ENTER_STATS_LOOP();
-  //   for(int i = 0; i < LEN; i++){
-  //     data[i] = 0;
-  //     data2[i] = 0;
-  //     data3[i]= 0;
-  // }
-  //   START_STATS();
+    ENTER_STATS_LOOP();
+    for(int i = 0; i < LEN; i++){
+      data[i] = 0;
+      data2[i] = 0;
+      data3[i]= 0;
+  }
+    START_STATS();
     
     encrypt(data, LEN, key, buf, BUF_LEN);
-  //   STOP_STATS();
+    STOP_STATS();
 
-  // // end of the performance statistics loop
-  //   EXIT_STATS_LOOP();
+  // end of the performance statistics loop
+    EXIT_STATS_LOOP();
 }
 
 
