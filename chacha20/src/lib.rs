@@ -111,6 +111,8 @@
 )]
 #![warn(missing_docs, rust_2018_idioms, trivial_casts, unused_qualifications)]
 #![allow(clippy::needless_range_loop)]
+#![feature(allocator_api)]
+extern crate alloc;
 
 pub use cipher;
 
@@ -315,22 +317,52 @@ impl<R: Unsigned> Drop for ChaChaCore<R> {
 #[cfg_attr(docsrs, doc(cfg(feature = "zeroize")))]
 impl<R: Unsigned> ZeroizeOnDrop for ChaChaCore<R> {}
 
+use alloc::boxed::Box;
+use pulp_sdk_rust::PiDevice;
+use pulp_wrapper::{PulpWrapper, SourceLocation};
 
+#[no_mangle]
+pub extern "C" fn chacha20_cluster_init(device: *mut PiDevice) -> *mut cty::c_void {
+    let wrapper = Box::new_in(
+        <PulpWrapper<ChaCha20>>::new(device),
+        pulp_sdk_rust::L2Allocator,
+    );
+    Box::into_raw(wrapper) as *mut cty::c_void
+}
 
 /// ChaCha20 encrypt function
 #[no_mangle]
-pub extern "C" fn encrypt(
+pub unsafe extern "C" fn chacha20_encrypt(
     data: *mut u8,
     len: usize,
     key: *const u8,
-    l1_alloc: *mut u8,
-    l1_alloc_len: usize,
+    iv: *const u8,
+    _l1_alloc: *mut u8,
+    _l1_alloc_len: usize,
+    wrapper: *mut cty::c_void,
 ) {
-    let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
-    let wrapper = pulp_wrapper::PulpWrapper::new(data, len, l1_alloc, l1_alloc_len, move || {
-        ChaCha20::new(key, Nonce::from_slice(&[0u8; 12]))
-    });
-    wrapper.run();
+    let wrapper = (wrapper as *mut PulpWrapper<ChaCha20>).as_mut().unwrap();
+    wrapper.run(data, len, key, iv, SourceLocation::L2);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn chacha20_encrypt_ram(
+    data: *mut u8,
+    len: usize,
+    key: *const u8,
+    iv: *const u8,
+    _l1_alloc: *mut u8,
+    _l1_alloc_len: usize,
+    wrapper: *mut cty::c_void,
+    device: *mut PiDevice,
+) {
+    let wrapper = (wrapper as *mut PulpWrapper<ChaCha20>).as_mut().unwrap();
+    wrapper.run(data, len, key, iv, SourceLocation::Ram(device));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn chacha20_cluster_close(wrapper: *mut cty::c_void) {
+    let wrapper = Box::from_raw_in(wrapper, pulp_sdk_rust::L2Allocator);
 }
 
 #[no_mangle]
@@ -342,10 +374,12 @@ pub extern "C" fn encrypt_serial(data: *mut u8, len: usize, key: *const u8) {
     chacha.apply_keystream(data);
 }
 
-// #[no_mangle]
-// pub extern "C" fn encrypt_serial_orig(data: *mut u8, len: usize, key: *const u8) {
-//     let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
-//     let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
-//     let mut chacha = chacha20_orig::ChaCha20::new(key, Nonce::from_slice(&[0u8; 12]));
-//     chacha.apply_keystream(data);
-// }
+#[no_mangle]
+pub extern "C" fn encrypt_serial_orig(data: *mut u8, len: usize, key: *const u8) {
+    use chacha20_orig::cipher::StreamCipher;
+    use chacha20_orig::*;
+    let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
+    let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
+    let mut chacha = chacha20_orig::ChaCha20::new(key, Nonce::from_slice(&[0u8; 12]));
+    chacha.apply_keystream(data);
+}

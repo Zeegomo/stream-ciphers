@@ -105,8 +105,8 @@ fn quarter_round(
     state[c] = sc;
     state[d] = sd;
 
-    state[a] = saa;
-    state[b] = sbb;
-    state[c] = scc;
-    state[d] = sdd;
+    state[aa] = saa;
+    state[bb] = sbb;
+    state[cc] = scc;
+    state[dd] = sdd;
 }

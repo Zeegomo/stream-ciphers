@@ -23,8 +23,11 @@ crate-type = ["staticlib", "lib"]
 
 [dependencies]
 cfg-if = "1"
+cty = "*"
 cipher = "0.4.2"
 pulp-wrapper = { path = "../pulp-wrapper" }
+pulp_sdk_rust = { git = " https://github.com/Zeegomo/pulp-sdk-rust" }
+chacha20_orig = { version = "*", package = "chacha20" }
 
 [target.'cfg(any(target_arch = "x86_64", target_arch = "x86"))'.dependencies]
 cpufeatures = "0.2"

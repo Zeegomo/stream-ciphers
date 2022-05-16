@@ -9,3 +9,4 @@ edition = "2021"
 cty = "*"
 cipher = "*"
 pulp_sdk_rust = { git = " https://github.com/Zeegomo/pulp-sdk-rust" }
+generic-array = "*"

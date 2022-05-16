@@ -6,17 +6,31 @@
 #define HOTTING 1
 #define REPEAT  3
 #define STACK_SIZE      2048
-#define LEN             (14336*5 -1)
+#define LEN             (100000)
 #define BUF_LEN             (14336*3)
 
 
 PI_L2 char data[LEN];
-PI_L1 char buf[BUF_LEN];
+PI_L1 char buf[1];
 PI_L2 char data2[LEN];
 PI_L2 char data3[LEN];
+PI_L2 char data4[LEN];
 PI_L1 char key[32];
+PI_L1 char iv[12];
+PI_L2 int lennn[1];
+PI_L2 pi_device_t cluster_dev[1];
 
-void encrypt(char *data, size_t len, char *key, char *alloc, size_t alloc_len);
+PI_L2 pi_device_t cluster_dev[1];
+PI_L2 struct pi_device ram;
+PI_L2 uint32_t ram_ptr;
+
+void* chacha20_cluster_init(pi_device_t *device);
+
+void chacha20_cluster_close(void* wrapper);
+
+void chacha20_encrypt(char *data, size_t len, char *key, char *iv, char *alloc, size_t alloc_len, void* wrapper);
+
+void chacha20_encrypt_ram(char *data, size_t len, char *key, char *iv, char *alloc, size_t alloc_len, void* wrapper, pi_device_t* ram);
 
 void encrypt_serial(char *data, size_t len, char *key);
 
@@ -70,42 +84,76 @@ void encrypt_serial_orig(char *data, size_t len, char *key);
 static void cluster_entry(void *arg)
 {
 //  // init performance counters
-     INIT_STATS();
+     //INIT_STATS();
 
 //   // executing the code multiple times to perform average statistics
-    ENTER_STATS_LOOP();
-    for(int i = 0; i < LEN; i++){
-      data[i] = 0;
-      data2[i] = 0;
-      data3[i]= 0;
-  }
-    START_STATS();
-    
-    encrypt(data, LEN, key, buf, BUF_LEN);
-    STOP_STATS();
+    //ENTER_STATS_LOOP();
+  //   for(int i = 0; i < len; i++){
+  //     data[i] = 0;
+  //     data2[i] = 0;
+  //     data3[i]= 0;
+  // }
+    // START_STATS();
+    chacha20_encrypt(data, lennn[0], key, iv, buf, BUF_LEN, arg);
+    // STOP_STATS();
 
   // end of the performance statistics loop
-    EXIT_STATS_LOOP();
+    // EXIT_STATS_LOOP();
+}
+
+static void cluster_entry_ram(void *arg)
+{
+//  // init performance counters
+     //INIT_STATS();
+
+//   // executing the code multiple times to perform average statistics
+    //ENTER_STATS_LOOP();
+  //   for(int i = 0; i < len; i++){
+  //     data[i] = 0;
+  //     data2[i] = 0;
+  //     data3[i]= 0;
+  // }
+    // START_STATS();
+    if (arg == NULL) {
+    exit(2);
+  }
+    chacha20_encrypt_ram((char *)ram_ptr, lennn[0], key, iv, buf, BUF_LEN, arg, &ram);
+    // STOP_STATS();
+
+  // end of the performance statistics loop
+    // EXIT_STATS_LOOP();
 }
 
 
 int main()
 {
-  struct pi_device cluster_dev = {0};
+  //cluster_dev[0] = {0};
+  struct pi_hyperram_conf ram_conf;
   struct pi_cluster_conf conf;
   struct pi_cluster_task cluster_task = {0};
-
-  // task parameters allocation
-  pi_cluster_task(&cluster_task, cluster_entry, NULL);
+  struct pi_cluster_task cluster_task_ram = {0};
 
   // [OPTIONAL] specify the stack size for the task
   cluster_task.stack_size = STACK_SIZE;
   cluster_task.slave_stack_size = STACK_SIZE;
 
+  pi_hyperram_conf_init(&ram_conf);
+  pi_open_from_conf(&ram, &ram_conf);
+
+  if (pi_ram_open(&ram))
+    {
+      printf("ERROR: Ram not working\n");
+      return -1;
+    }
+
+
+  pi_ram_alloc(&ram, &ram_ptr, LEN);
+  printf("%p\n", ram_ptr);
+
   // open the cluster
   pi_cluster_conf_init(&conf);
-  pi_open_from_conf(&cluster_dev, &conf);
-  if (pi_cluster_open(&cluster_dev))
+  pi_open_from_conf(cluster_dev, &conf);
+  if (pi_cluster_open(cluster_dev))
   {
     printf("ERROR: Cluster not working\n");
     return -1;
@@ -113,19 +161,58 @@ int main()
   for(int i = 0; i < 32; i++)
     key[i] = 0;
 
-  for(int i = 0; i < LEN; i++){
-      data[i] = 0;
-      data2[i] = 0;
-      data3[i]= 0;
-  }
+  lennn[0] = LEN;
 
   // INIT_STATS();
   // ENTER_STATS_LOOP();
   // START_STATS();
-  pi_cluster_send_task_to_cl(&cluster_dev, &cluster_task);
+  // task parameters allocation
+
+  void* wrapper = chacha20_cluster_init(cluster_dev);
+
+  printf("%p\n", wrapper);
+  if (wrapper == NULL) {
+    exit(2);
+  }
+
+  for (int i = 5000; i < 100000; i++){
+  //   i = 1000;
+    for(int j = 0; j < i; j++){
+      data[j] = 0;
+      data2[j] = 0;
+      data3[j] = 0;
+      data4[j] = 0;
+    }
+    pi_ram_write(&ram, ram_ptr, (void *)data4, i);
+    lennn[0] = i;
+    printf("iteration: %d\n", i);
+    pi_cluster_task(&cluster_task, cluster_entry, wrapper);
+    pi_cluster_task(&cluster_task_ram, cluster_entry_ram, wrapper);
+    pi_cluster_send_task_to_cl(cluster_dev, &cluster_task);
+    pi_cluster_send_task_to_cl(cluster_dev, &cluster_task_ram);
+
+    pi_ram_read(&ram, ram_ptr, (void *)data4, i);
+  //   INIT_STATS();
+  // ENTER_STATS_LOOP();
+  // START_STATS();
+    encrypt_serial(data2, i, key);
+    encrypt_serial_orig(data3, i, key);
+  
+    for(int j = 0; j < i; j++){
+      if (data[j] !=data2[j] || data2[j] != data3[j] || data3[j] != data4[j]) {
+        for (int o = 0; o < 10; o++){
+          printf("wrong %d %d %d %d %d %d\n", i, j,  data[j+o], data2[j+o], data3[j+o], data4[j+o]);
+        }
+          
+          exit(1);
+      }
+    }
+  }
+  
   // STOP_STATS();
   // EXIT_STATS_LOOP();
   printf("encrypt serial\n", data[0], data[LEN-1]);
+  chacha20_cluster_close(wrapper);
   
   // pi_cluster_task(&cluster_task, cluster_entry3, NULL);
 //   // pi_cluster_send_task_to_cl(&cluster_dev, &cluster_task);
@@ -134,7 +221,7 @@ int main()
 // // //   // executing the code multiple times to perform average statistics
 //     ENTER_STATS_LOOP();
 //     START_STATS();
-    encrypt_serial(data2, LEN, key);
+    
 //     STOP_STATS();
 //     EXIT_STATS_LOOP();}
 
@@ -149,15 +236,10 @@ int main()
 //     EXIT_STATS_LOOP();}
 
 
-  for(int i = 0; i < LEN; i++){
-      if (data[i] !=data2[i]) {
-          printf("WRONG %d %d %d %d\n", i, data[i], data2[i], data3[i]);
-          break;
-      }
-  }
-
+  
+  chacha20_cluster_close(wrapper);
   // closing the cluster
-  pi_cluster_close(&cluster_dev);
+  pi_cluster_close(cluster_dev);
     
 
 
