@@ -1,4 +1,4 @@
-CORES ?= 4
+CORES ?= 8
 
 rust_lib:
 	CORES=${CORES} cargo +nightly build --manifest-path ../chacha20/Cargo.toml --target riscv32imc-unknown-none-elf --no-default-features --release

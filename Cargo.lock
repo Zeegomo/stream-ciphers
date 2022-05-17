@@ -120,9 +120,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.125"
+version = "0.2.126"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5916d2ae698f6de9bfb891ad7a8d65c09d232dc58cc4ac433c7da3b2fd84bc2b"
+checksum = "349d5a591cd28b49e1d1037471617a32ddcda5731b99419008085f72d5a53836"
 
 [[package]]
 name = "pulp-wrapper"
@@ -137,7 +137,7 @@ dependencies = [
 [[package]]
 name = "pulp_sdk_rust"
 version = "0.1.0"
-source = "git+https://github.com/Zeegomo/pulp-sdk-rust#6675afab88b5ea1119277d6bd9222be237a43189"
+source = "git+https://github.com/Zeegomo/pulp-sdk-rust#c744e186d96db26326b1c54ef1e23bd06c2e3508"
 dependencies = [
  "cty",
 ]

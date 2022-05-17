@@ -28,13 +28,13 @@ void* chacha20_cluster_init(pi_device_t *device);
 
 void chacha20_cluster_close(void* wrapper);
 
-void chacha20_encrypt(char *data, size_t len, char *key, char *iv, char *alloc, size_t alloc_len, void* wrapper);
+void chacha20_encrypt(char *data, size_t len, char *key, char *iv, void* wrapper);
 
-void chacha20_encrypt_ram(char *data, size_t len, char *key, char *iv, char *alloc, size_t alloc_len, void* wrapper, pi_device_t* ram);
+void chacha20_encrypt_ram(char *data, size_t len, char *key, char *iv, void* wrapper, pi_device_t* ram);
 
-void encrypt_serial(char *data, size_t len, char *key);
+void encrypt_serial(char *data, size_t len, char *key, char *iv);
 
-void encrypt_serial_orig(char *data, size_t len, char *key);
+void encrypt_serial_orig(char *data, size_t len, char *key, char *iv);
 
 #define INIT_STATS()  
 
@@ -94,7 +94,7 @@ static void cluster_entry(void *arg)
   //     data3[i]= 0;
   // }
     // START_STATS();
-    chacha20_encrypt(data, lennn[0], key, iv, buf, BUF_LEN, arg);
+    chacha20_encrypt(data, lennn[0], key, iv, arg);
     // STOP_STATS();
 
   // end of the performance statistics loop
@@ -117,7 +117,7 @@ static void cluster_entry_ram(void *arg)
     if (arg == NULL) {
     exit(2);
   }
-    chacha20_encrypt_ram((char *)ram_ptr, lennn[0], key, iv, buf, BUF_LEN, arg, &ram);
+    chacha20_encrypt_ram((char *)ram_ptr, lennn[0], key, iv, arg, &ram);
     // STOP_STATS();
 
   // end of the performance statistics loop
@@ -176,7 +176,6 @@ int main()
   }
 
   for (int i = 5000; i < 100000; i++){
-  //   i = 1000;
     for(int j = 0; j < i; j++){
       data[j] = 0;
       data2[j] = 0;
@@ -187,26 +186,26 @@ int main()
     lennn[0] = i;
     printf("iteration: %d\n", i);
     pi_cluster_task(&cluster_task, cluster_entry, wrapper);
-    pi_cluster_task(&cluster_task_ram, cluster_entry_ram, wrapper);
+    //pi_cluster_task(&cluster_task_ram, cluster_entry_ram, wrapper);
     pi_cluster_send_task_to_cl(cluster_dev, &cluster_task);
-    pi_cluster_send_task_to_cl(cluster_dev, &cluster_task_ram);
+    //pi_cluster_send_task_to_cl(cluster_dev, &cluster_task_ram);
 
     pi_ram_read(&ram, ram_ptr, (void *)data4, i);
   //   INIT_STATS();
   // ENTER_STATS_LOOP();
   // START_STATS();
-    encrypt_serial(data2, i, key);
-    encrypt_serial_orig(data3, i, key);
+    encrypt_serial(data2, i, key, iv);
+    encrypt_serial_orig(data3, i, key, iv);
   
-    for(int j = 0; j < i; j++){
-      if (data[j] !=data2[j] || data2[j] != data3[j] || data3[j] != data4[j]) {
-        for (int o = 0; o < 10; o++){
-          printf("wrong %d %d %d %d %d %d\n", i, j,  data[j+o], data2[j+o], data3[j+o], data4[j+o]);
-        }
+    // for(int j = 0; j < i; j++){
+    //   if (data[j] !=data2[j] || data2[j] != data3[j] || data3[j] != data4[j]) {
+    //     for (int o = 0; o < 10; o++){
+    //       printf("wrong %d %d %d %d %d %d\n", i, j,  data[j+o], data2[j+o], data3[j+o], data4[j+o]);
+    //     }
           
-          exit(1);
-      }
-    }
+    //       exit(1);
+    //   }
+    // }
   }
   
   // STOP_STATS();

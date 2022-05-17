@@ -1,9 +1,9 @@
 use ::pulp_sdk_rust::*;
+use core::marker::PhantomPinned;
 use core::ops::{Deref, DerefMut};
 
 /// A managed buffer in L1 cache with automatic DMA transfers in and out based on
 /// rounds
-/// DMA triple buffer
 /// Since we need to transfer back the modified data, we divide the L1 allocation
 /// in 3 buffers: work, pre-fetch and commit
 ///
@@ -40,71 +40,65 @@ pub struct DmaBuf<const CORES: usize> {
     work_buf_len: usize,
 }
 
-// todo implement unpin
 enum DmaTransfer {
     Ram {
         req: PiClRamReq,
-        device: *mut PiDevice,
+        _pin: PhantomPinned,
     },
-    L2(PiClDmaCmd),
+    L2 {
+        cmd: PiClDmaCmd,
+        _pin: PhantomPinned,
+    },
 }
 
+// TODO: ensure can't be unpinned
+// It's safe for now as it's a private struct and we know that we never move it,
+// but it will be necessary to make [DmaBuf] a public struct.
 impl DmaTransfer {
+    pub fn new_l2() -> Self {
+        Self::L2 {
+            cmd: PiClDmaCmd::new(),
+            _pin: PhantomPinned,
+        }
+    }
+
+    pub fn new_ram(ram: *mut PiDevice) -> Self {
+        Self::Ram {
+            req: PiClRamReq::new(ram),
+            _pin: PhantomPinned,
+        }
+    }
+
     unsafe fn transfer_in(&mut self, remote: *mut u8, l1: *mut u8, len: usize) {
         match self {
-            Self::Ram { ref mut req, device } => {
-                pi_cl_ram_read(
-                    *device,
-                    remote,
-                    l1,
-                    len,
-                    req,
-                );
+            Self::Ram { ref mut req, .. } => {
+                pi_cl_ram_read(req.device(), remote, l1, len, req);
             }
-            Self::L2(ref mut cmd) => {
-                pi_cl_dma_cmd(
-                    remote,
-                    l1,
-                    len,
-                    PiClDmaDirE::PI_CL_DMA_DIR_EXT2LOC,
-                    cmd,
-                );
+            Self::L2 { ref mut cmd, .. } => {
+                pi_cl_dma_cmd(remote, l1, len, PiClDmaDirE::PI_CL_DMA_DIR_EXT2LOC, cmd);
             }
         }
     }
 
     unsafe fn transfer_out(&mut self, remote: *mut u8, l1: *mut u8, len: usize) {
         match self {
-            Self::Ram { ref mut req, device } => {
-                pi_cl_ram_write(
-                    *device,
-                    remote,
-                    l1,
-                    len,
-                    req,
-                );
+            Self::Ram { ref mut req, .. } => {
+                pi_cl_ram_write(req.device(), remote, l1, len, req);
             }
-            Self::L2(ref mut cmd) => {
-                pi_cl_dma_cmd(
-                    remote,
-                    l1,
-                    len,
-                    PiClDmaDirE::PI_CL_DMA_DIR_LOC2EXT,
-                    cmd,
-                );
+            Self::L2 { ref mut cmd, .. } => {
+                pi_cl_dma_cmd(remote, l1, len, PiClDmaDirE::PI_CL_DMA_DIR_LOC2EXT, cmd);
             }
         }
     }
 
-    fn wait(&mut self) {
+    // Safety: do not call on uninitialized requests
+    unsafe fn wait(&mut self) {
         match self {
             Self::Ram { ref mut req, .. } if req.is_in_transfer() => pi_cl_ram_read_wait(req),
             Self::Ram { ref mut req, .. } => pi_cl_ram_write_wait(req),
-            Self::L2(ref mut cmd) => pi_cl_dma_wait(cmd),
+            Self::L2 { ref mut cmd, .. } => pi_cl_dma_wait(cmd),
         }
     }
-
-    
 }
 
 impl<const CORES: usize> DmaBuf<CORES> {
@@ -146,23 +140,49 @@ impl<const CORES: usize> DmaBuf<CORES> {
         }
     }
 
+    /// Build a new managed L1 cluster buffer backing a ram memory allocation
+    ///
+    /// Safety:
+    /// * source must be valid to read for source_len bytes
+    /// * l1_alloc must be valid to read / write for l1_alloc_len bytes
+    /// * should only be called from within a PULP cluster
     pub fn new_from_ram(
         source: *mut u8,
         source_len: usize,
         l1_alloc: *mut u8,
         l1_alloc_len: usize,
-        device: *mut PiDevice
+        device: *mut PiDevice,
     ) -> Self {
-        Self::common(source, source_len, l1_alloc, l1_alloc_len, DmaTransfer::Ram{device, req: PiClRamReq::new(device)}, DmaTransfer::Ram{device, req: PiClRamReq::new(device)})
+        Self::common(
+            source,
+            source_len,
+            l1_alloc,
+            l1_alloc_len,
+            DmaTransfer::new_ram(device),
+            DmaTransfer::new_ram(device),
+        )
     }
 
+    /// Build a new managed L1 cluster buffer backing a L2 memory allocation
+    ///
+    /// Safety:
+    /// * source must be valid to read for source_len bytes
+    /// * l1_alloc must be valid to read / write for l1_alloc_len bytes
+    /// * should only be called from within a PULP cluster
     pub fn new_from_l2(
         source: *mut u8,
         source_len: usize,
         l1_alloc: *mut u8,
         l1_alloc_len: usize,
     ) -> Self {
-        Self::common(source, source_len, l1_alloc, l1_alloc_len, DmaTransfer::L2(PiClDmaCmd::new()), DmaTransfer::L2(PiClDmaCmd::new()))
+        Self::common(
+            source,
+            source_len,
+            l1_alloc,
+            l1_alloc_len,
+            DmaTransfer::new_l2(),
+            DmaTransfer::new_l2(),
+        )
     }
 
     pub fn work_buf_len(&self) -> usize {
@@ -170,7 +190,12 @@ impl<const CORES: usize> DmaBuf<CORES> {
     }
 
     /// Signal that work has completed on the current 'work' buffer
-    #[inline(never)]
+    ///
+    /// Safety:
+    /// * source must be valid to read / write for source_len bytes
+    /// * l1_alloc must be valid to read / write for l1_alloc_len bytes
+    /// * should only be called from within a PULP cluster
+    #[inline]
     pub fn advance(&mut self) {
         pi_cl_team_barrier();
         self.rounds += 1;
@@ -196,13 +221,20 @@ impl<const CORES: usize> DmaBuf<CORES> {
 
                 // start dma out (commit)
                 let commit_buf_ptr = self.get_commit_buf_ptr();
-                self.commit_dma.transfer_out(self.source.add((self.rounds - 1) * self.buf_size), commit_buf_ptr, self.work_buf_len);
+                self.commit_dma.transfer_out(
+                    self.source.add((self.rounds - 1) * self.buf_size),
+                    commit_buf_ptr,
+                    self.work_buf_len,
+                );
 
                 if offset < self.source_len {
                     // start dma in (pre-fetch)
                     let pre_fetch_buf_ptr = self.get_pre_fetch_buf_ptr();
-                    self.pre_fetch_dma.transfer_in(self.source.add(offset), pre_fetch_buf_ptr, size);
-                    
+                    self.pre_fetch_dma.transfer_in(
+                        self.source.add(offset),
+                        pre_fetch_buf_ptr,
+                        size,
+                    );
                 }
             }
             self.work_buf_len = self.last_transfer;
@@ -213,21 +245,22 @@ impl<const CORES: usize> DmaBuf<CORES> {
     }
 
     /// Finalize by flushing all local cached data upstream
-    pub fn flush(&mut self) {
-        unsafe {
-            if pi_core_id() == 0 {
-                self.commit_dma.wait();
-            }
-            pi_cl_team_barrier();
+    ///
+    /// Safety:
+    /// * must be called in the PULP cluster
+    /// * must be called after having called advance() at least once
+    pub unsafe fn flush(&mut self) {
+        if pi_core_id() == 0 {
+            self.commit_dma.wait();
         }
+        pi_cl_team_barrier();
     }
 
-    /// TODO: this is wildly unsound and aliased in every core
-    /// # Safety
-    /// For this to be safe we need:
-    ///     * sharding based on cores, but that's a bit too much domain knowledge for a simple buffer
-    ///     * lifetime of the returned buffer should never exceed any other invocation of `advance` by other cores
-    #[inline(never)]
+    /// Get a mutable smart pointer to the current work buf
+    ///
+    /// Safety: It's not really unsafe to call this, but [SmartBuf] should only be
+    //// dereferenced in the PULP cluster
+    #[inline(always)]
     pub unsafe fn get_work_buf(&mut self) -> SmartBuf {
         SmartBuf {
             buf: self.l1_alloc.add(self.counters[0]),
@@ -237,19 +270,19 @@ impl<const CORES: usize> DmaBuf<CORES> {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn get_pre_fetch_buf_ptr(&mut self) -> *mut u8 {
         unsafe { self.l1_alloc.add(self.counters[1]) }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn get_commit_buf_ptr(&mut self) -> *mut u8 {
         unsafe { self.l1_alloc.add(self.counters[2]) }
     }
 }
 
 // A smart pointer that automatically derefs to a different portion of the slice in each core
-// in the pulp cluster to avoid aliasing
+// in the PULP cluster to avoid aliasing
 pub struct SmartBuf<'a> {
     buf: *mut u8,
     pub len: usize,
