@@ -18,10 +18,6 @@ use buf::DmaBuf;
 #[global_allocator]
 static DEFAULT_ALLOCATOR: GlobalAllocator = GlobalAllocator;
 
-macro_rules! check_cores {
-    ()
-}
-
 const fn parse_cores_u8(s: &str) -> usize {
     let cores = (s.as_bytes()[0] - b'0') as usize;
 
@@ -71,7 +67,6 @@ impl<C: StreamCipher + StreamCipherSeek + KeyIvInit> PulpWrapper<C> {
             cluster_buffer: {
                 let buf = Box::new_uninit_slice_in(CLUSTER_L1_BUFFER_LEN, l1_allocator);
                 // SAFETY: u8 are always valid, and this will be overwritten before actual use by DMA
-                // TODO: provide a way to reuse this buffer
                 unsafe { buf.assume_init() }
             },
             core_data: NonNull::new(unsafe {
