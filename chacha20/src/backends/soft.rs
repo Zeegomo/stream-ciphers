@@ -35,12 +35,16 @@ fn run_rounds<R: Unsigned>(state: &[u32; STATE_WORDS]) -> [u32; STATE_WORDS] {
 
     for _ in 0..R::USIZE {
         // column rounds
-        quarter_round(0, 4, 8, 12, 1, 5, 9, 13, &mut res);
-        quarter_round(2, 6, 10, 14, 3, 7, 11, 15, &mut res);
+        quarter_round(0, 4, 8, 12, &mut res);
+        quarter_round(1, 5, 9, 13, &mut res);
+        quarter_round(2, 6, 10, 14, &mut res);
+        quarter_round(3, 7, 11, 15, &mut res);
 
         // diagonal rounds
-        quarter_round(0, 5, 10, 15, 1, 6, 11, 12, &mut res);
-        quarter_round(2, 7, 8, 13, 3, 4, 9, 14, &mut res);
+        quarter_round(0, 5, 10, 15, &mut res);
+        quarter_round(1, 6, 11, 12, &mut res);
+        quarter_round(2, 7, 8, 13, &mut res);
+        quarter_round(3, 4, 9, 14, &mut res);
     }
 
     for (s1, s0) in res.iter_mut().zip(state.iter()) {
@@ -50,63 +54,31 @@ fn run_rounds<R: Unsigned>(state: &[u32; STATE_WORDS]) -> [u32; STATE_WORDS] {
 }
 
 /// The ChaCha20 quarter round function
-#[allow(clippy::too_many_arguments)]
 #[inline(always)]
-fn quarter_round(
-    a: usize,
-    b: usize,
-    c: usize,
-    d: usize,
-    aa: usize,
-    bb: usize,
-    cc: usize,
-    dd: usize,
-    state: &mut [u32; STATE_WORDS],
-) {
+fn quarter_round(a: usize, b: usize, c: usize, d: usize, state: &mut [u32; STATE_WORDS]) {
     let mut sa = state[a];
     let mut sb = state[b];
     let mut sc = state[c];
     let mut sd = state[d];
-    let mut saa = state[aa];
-    let mut sbb = state[bb];
-    let mut scc = state[cc];
-    let mut sdd = state[dd];
 
     sa = sa.wrapping_add(sb);
-    saa = saa.wrapping_add(sbb);
     sd ^= sa;
-    sdd ^= saa;
     sd = sd.rotate_left(16);
-    sdd = sdd.rotate_left(16);
 
     sc = sc.wrapping_add(sd);
-    scc = scc.wrapping_add(sdd);
     sb ^= sc;
-    sbb ^= scc;
     sb = sb.rotate_left(12);
-    sbb = sbb.rotate_left(12);
 
     sa = sa.wrapping_add(sb);
-    saa = saa.wrapping_add(sbb);
     sd ^= sa;
-    sdd ^= saa;
     sd = sd.rotate_left(8);
-    sdd = sdd.rotate_left(8);
 
     sc = sc.wrapping_add(sd);
-    scc = scc.wrapping_add(sdd);
     sb ^= sc;
-    sbb ^= scc;
     sb = sb.rotate_left(7);
-    sbb = sbb.rotate_left(7);
 
     state[a] = sa;
     state[b] = sb;
     state[c] = sc;
     state[d] = sd;
-
-    state[aa] = saa;
-    state[bb] = sbb;
-    state[cc] = scc;
-    state[dd] = sdd;
 }
