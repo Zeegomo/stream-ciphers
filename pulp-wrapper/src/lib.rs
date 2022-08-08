@@ -28,7 +28,7 @@ const fn parse_cores_u8(s: &str) -> usize {
 }
 
 const CORES: usize = parse_cores_u8(core::env!("CORES"));
-const CLUSTER_L1_BUFFER_LEN: usize = 14336 * 3;
+const CLUSTER_L1_BUFFER_LEN: usize = 2048 * 3;
 
 /// Convenience struct for stream encryption / decryption using the PULP cluster.
 /// Supports encryption / decryption directly from ram or L2 memory and manages
