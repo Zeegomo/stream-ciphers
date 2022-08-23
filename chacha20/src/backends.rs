@@ -15,6 +15,9 @@ cfg_if! {
                 pub(crate) mod sse2;
             }
         }
+    } else if #[cfg(target_arch = "riscv32")] {
+        // TODO: introduce some more specific notion of pulp (requires compiler mod)
+        pub(crate) mod pulp;
     } else {
         pub(crate) mod soft;
     }

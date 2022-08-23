@@ -54,31 +54,20 @@ fn run_rounds<R: Unsigned>(state: &[u32; STATE_WORDS]) -> [u32; STATE_WORDS] {
 }
 
 /// The ChaCha20 quarter round function
-#[inline(always)]
 fn quarter_round(a: usize, b: usize, c: usize, d: usize, state: &mut [u32; STATE_WORDS]) {
-    let mut sa = state[a];
-    let mut sb = state[b];
-    let mut sc = state[c];
-    let mut sd = state[d];
+    state[a] = state[a].wrapping_add(state[b]);
+    state[d] ^= state[a];
+    state[d] = state[d].rotate_left(16);
 
-    sa = sa.wrapping_add(sb);
-    sd ^= sa;
-    sd = sd.rotate_left(16);
+    state[c] = state[c].wrapping_add(state[d]);
+    state[b] ^= state[c];
+    state[b] = state[b].rotate_left(12);
 
-    sc = sc.wrapping_add(sd);
-    sb ^= sc;
-    sb = sb.rotate_left(12);
+    state[a] = state[a].wrapping_add(state[b]);
+    state[d] ^= state[a];
+    state[d] = state[d].rotate_left(8);
 
-    sa = sa.wrapping_add(sb);
-    sd ^= sa;
-    sd = sd.rotate_left(8);
-
-    sc = sc.wrapping_add(sd);
-    sb ^= sc;
-    sb = sb.rotate_left(7);
-
-    state[a] = sa;
-    state[b] = sb;
-    state[c] = sc;
-    state[d] = sd;
+    state[c] = state[c].wrapping_add(state[d]);
+    state[b] ^= state[c];
+    state[b] = state[b].rotate_left(7);
 }

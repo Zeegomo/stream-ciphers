@@ -18,15 +18,13 @@ repository = "https://github.com/RustCrypto/stream-ciphers"
 keywords = ["crypto", "stream-cipher", "chacha8", "chacha12", "xchacha20"]
 categories = ["cryptography", "no-std"]
 
-[lib]
-crate-type = ["staticlib", "lib"]
+# [lib]
+# crate-type = ["staticlib", "lib"]
 
 [dependencies]
 cfg-if = "1"
 cty = "*"
 cipher = "0.4.2"
-pulp-wrapper = { path = "../pulp-wrapper" }
-pulp_sdk_rust = { git = " https://github.com/Zeegomo/pulp-sdk-rust" }
 chacha20_orig = { version = "*", package = "chacha20" }
 
 [target.'cfg(any(target_arch = "x86_64", target_arch = "x86"))'.dependencies]

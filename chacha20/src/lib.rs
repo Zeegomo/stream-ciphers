@@ -111,8 +111,6 @@
 )]
 #![warn(missing_docs, rust_2018_idioms, trivial_casts, unused_qualifications)]
 #![allow(clippy::needless_range_loop)]
-#![feature(allocator_api)]
-extern crate alloc;
 
 pub use cipher;
 
@@ -284,6 +282,9 @@ impl<R: Unsigned> StreamCipherCore for ChaChaCore<R> {
                         }
                     }
                 }
+            } else if #[cfg(target_arch = "riscv32")] {
+                // TODO: introduce some more specific notion of pulp (requires compiler mod)
+                f.call(&mut backends::pulp::Backend(self));
             } else {
                 f.call(&mut backends::soft::Backend(self));
             }
@@ -316,101 +317,3 @@ impl<R: Unsigned> Drop for ChaChaCore<R> {
 #[cfg(feature = "zeroize")]
 #[cfg_attr(docsrs, doc(cfg(feature = "zeroize")))]
 impl<R: Unsigned> ZeroizeOnDrop for ChaChaCore<R> {}
-
-use alloc::boxed::Box;
-use pulp_sdk_rust::PiDevice;
-use pulp_wrapper::{PulpWrapper, SourceLocation};
-
-/// Initialize the cluster wrapper in L2 memory
-///
-/// Safety:
-/// * device must be a valid pointer to a correctly initialized PULP cluster
-#[no_mangle]
-pub extern "C" fn chacha20_cluster_init(device: *mut PiDevice) -> *mut cty::c_void {
-    let wrapper = Box::new_in(
-        <PulpWrapper<ChaCha20>>::new(device),
-        pulp_sdk_rust::L2Allocator,
-    );
-    Box::into_raw(wrapper) as *mut cty::c_void
-}
-
-/// Encrypt / decrypt using ChaCha20
-///
-/// Safety:
-/// * data must be valid to read / write for len bytes and must be in L2 memory
-/// * key must be valid to read for 32 bytes
-/// * iv must be valid to read for 12 bytes
-/// * wrapper must be a valid pointer to an initialized PULP Wrapper allocated by this library
-#[no_mangle]
-pub unsafe extern "C" fn chacha20_encrypt(
-    data: *mut u8,
-    len: usize,
-    key: *const u8,
-    iv: *const u8,
-    wrapper: *mut cty::c_void,
-) {
-    let wrapper = (wrapper as *mut PulpWrapper<ChaCha20>).as_mut().unwrap();
-    wrapper.run(data, len, key, iv, SourceLocation::L2);
-}
-
-/// Encrypt / decrypt using ChaCha20
-///
-/// Safety:
-/// * data must be valid to read / write for len bytes and must reside in the ram device [device]
-/// * key must be valid to read for 32 bytes
-/// * iv must be valid to read for 12 bytes
-/// * wrapper must be a valid pointer to an initialized PULP Wrapper allocated by this library
-/// * device must be a valid pointer to a correctly initialized Ram device
-#[no_mangle]
-pub unsafe extern "C" fn chacha20_encrypt_ram(
-    data: *mut u8,
-    len: usize,
-    key: *const u8,
-    iv: *const u8,
-    wrapper: *mut cty::c_void,
-    device: *mut PiDevice,
-) {
-    let wrapper = (wrapper as *mut PulpWrapper<ChaCha20>).as_mut().unwrap();
-    wrapper.run(data, len, key, iv, SourceLocation::Ram(device));
-}
-
-/// Clean up resources used by the PULP wrapper
-///
-/// Safety: wrapper must be a valid pointer to an initialized PULP wrapper
-#[no_mangle]
-pub unsafe extern "C" fn chacha20_cluster_close(wrapper: *mut cty::c_void) {
-    let _wrapper = Box::from_raw_in(wrapper, pulp_sdk_rust::L2Allocator);
-}
-
-/// Encrypt data serially
-///
-/// Safety:
-/// * data must be valid to read / write for len bytes and must be in L2 memory
-/// * key must be valid to read for 32 bytes
-/// * iv must be valid to read for 12 bytes
-#[no_mangle]
-pub extern "C" fn encrypt_serial(data: *mut u8, len: usize, key: *const u8, iv: *const u8) {
-    use cipher::StreamCipher;
-    let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
-    let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
-    let iv = Nonce::from_slice(unsafe { core::slice::from_raw_parts(iv, 12) });
-    let mut chacha = ChaCha20::new(key, iv);
-    chacha.apply_keystream(data);
-}
-
-/// Encrypt data serially using the unmodified version of this library
-///
-/// Safety:
-/// * data must be valid to read / write for len bytes and must be in L2 memory
-/// * key must be valid to read for 32 bytes
-/// * iv must be valid to read for 12 bytes
-#[no_mangle]
-pub extern "C" fn encrypt_serial_orig(data: *mut u8, len: usize, key: *const u8, iv: *const u8) {
-    use chacha20_orig::cipher::StreamCipher;
-    use chacha20_orig::*;
-    let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
-    let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
-    let iv = Nonce::from_slice(unsafe { core::slice::from_raw_parts(iv, 12) });
-    let mut chacha = chacha20_orig::ChaCha20::new(key, iv);
-    chacha.apply_keystream(data);
-}

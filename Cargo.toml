@@ -1,5 +1,13 @@
 [workspace]
-members = ["chacha20", "hc-256", "rabbit", "rc4", "salsa20", "pulp-wrapper"]
+members = [
+    "chacha20",
+    "hc-256",
+    "rabbit",
+    "rc4",
+    "salsa20",
+    "pulp-wrapper",
+    "cipher-suite",
+]
 resolver = "2"
 
 [profile.dev]
@@ -9,4 +17,4 @@ opt-level = 2
 debug = true
 
 [patch.crates-io]
-inout = { git = 'https://github.com/Zeegomo/utils', rev = "54528796038c80795f1dc4b53e228f79f7897611" }
+inout = { git = 'https://github.com/Zeegomo/utils', rev = "31988bc5b666f98747eb8521ce9d20f4b9a4419a" }

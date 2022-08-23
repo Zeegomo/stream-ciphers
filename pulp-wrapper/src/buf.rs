@@ -91,6 +91,7 @@ impl DmaTransfer {
         }
     }
 
+    // TODO typestate
     // Safety: do not call on uninitialized requests
     unsafe fn wait(&mut self) {
         match self {
