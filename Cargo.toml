@@ -7,6 +7,8 @@ members = [
     "salsa20",
     "pulp-wrapper",
     "cipher-suite",
+    "asm-macros",
+    "tmp",
 ]
 resolver = "2"
 
@@ -17,4 +19,4 @@ opt-level = 2
 debug = true
 
 [patch.crates-io]
-inout = { git = 'https://github.com/Zeegomo/utils', rev = "31988bc5b666f98747eb8521ce9d20f4b9a4419a" }
+inout = { git = 'https://github.com/Zeegomo/utils', rev = "20836f85a4f21e761d52f220dd7790c9f9ddb4d2" }

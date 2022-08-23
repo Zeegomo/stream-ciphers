@@ -9,9 +9,9 @@ use chacha20::ChaCha20;
 use cipher::{IvSizeUser, KeySizeUser, Unsigned};
 use core::pin::Pin;
 use generic_array::GenericArray;
-use pulp_sdk_rust::{abort_all, GlobalAllocator, PiDevice};
+use pulp_sdk_rust::{abort_all, GlobalAllocator, PiDevice, print};
 use pulp_wrapper::{Cluster, PulpWrapper, SourceLocation};
-
+use crate::alloc::string::ToString;
 // This should not actually be used, as it's not clear from the context what the default allocation is
 #[global_allocator]
 static DEFAULT_ALLOCATOR: GlobalAllocator = GlobalAllocator;
@@ -19,7 +19,8 @@ static DEFAULT_ALLOCATOR: GlobalAllocator = GlobalAllocator;
 use core::panic::PanicInfo;
 
 #[panic_handler]
-fn panic_handler(_info: &PanicInfo) -> ! {
+fn panic_handler(info: &PanicInfo) -> ! {
+    print(info.to_string());
     unsafe { abort_all() };
     loop {}
 }
@@ -92,19 +93,20 @@ pub unsafe extern "C" fn cluster_close(wrapper: *mut cty::c_void) {
     let _wrapper = Box::from_raw_in(wrapper, pulp_sdk_rust::L2Allocator);
 }
 
-// /// Encrypt data serially using the unmodified version of this library
-// ///
-// /// Safety:
-// /// * data must be valid to read / write for len bytes and must be in L2 memory
-// /// * key must be valid to read for 32 bytes
-// /// * iv must be valid to read for 12 bytes
-// #[no_mangle]
-// pub extern "C" fn encrypt_serial_orig(data: *mut u8, len: usize, key: *const u8, iv: *const u8) {
-//     use chacha20_orig::cipher::StreamCipher;
-//     use chacha20_orig::*;
-//     let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
-//     let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
-//     let iv = Nonce::from_slice(unsafe { core::slice::from_raw_parts(iv, 12) });
-//     let mut chacha = chacha20_orig::ChaCha20::new(key, iv);
-//     chacha.apply_keystream(data);
-// }
+/// Encrypt data serially using the unmodified version of this library
+///
+/// Safety:
+/// * data must be valid to read / write for len bytes and must be in L2 memory
+/// * key must be valid to read for 32 bytes
+/// * iv must be valid to read for 12 bytes
+#[no_mangle]
+pub extern "C" fn encrypt_serial_orig(data: *mut u8, len: usize, key: *const u8, iv: *const u8) {
+    use chacha20_orig::cipher::StreamCipher;
+    use chacha20_orig::*;
+    use cipher::KeyIvInit;
+    let data = unsafe { core::slice::from_raw_parts_mut(data, len) };
+    let key = Key::from_slice(unsafe { core::slice::from_raw_parts(key, 32) });
+    let iv = Nonce::from_slice(unsafe { core::slice::from_raw_parts(iv, 12) });
+    let mut chacha = chacha20_orig::ChaCha20::new(key, iv);
+    chacha.apply_keystream(data);
+}

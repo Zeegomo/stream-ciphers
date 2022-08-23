@@ -4,6 +4,13 @@
 version = 3
 
 [[package]]
+name = "asm-macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+]
+
+[[package]]
 name = "blobby"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12,7 +19,7 @@ checksum = "847495c209977a90e8aad588b959d0ca9f5dc228096d29a6bd3defd53f35eaec"
 [[package]]
 name = "block-padding"
 version = "0.3.2"
-source = "git+https://github.com/Zeegomo/utils?rev=31988bc5b666f98747eb8521ce9d20f4b9a4419a#31988bc5b666f98747eb8521ce9d20f4b9a4419a"
+source = "git+https://github.com/Zeegomo/utils?rev=20836f85a4f21e761d52f220dd7790c9f9ddb4d2#20836f85a4f21e761d52f220dd7790c9f9ddb4d2"
 dependencies = [
  "generic-array",
 ]
@@ -27,6 +34,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "chacha20"
 version = "0.9.0"
 dependencies = [
+ "asm-macros",
  "cfg-if",
  "chacha20 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "cipher",
@@ -63,6 +71,7 @@ name = "cipher-suite"
 version = "0.1.0"
 dependencies = [
  "chacha20 0.9.0",
+ "chacha20 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "cipher",
  "cty",
  "generic-array",
@@ -74,9 +83,9 @@ dependencies = [
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1079fb8528d9f9c888b1e8aa651e6e079ade467323d58f75faf1d30b1808f540"
+checksum = "dc948ebb96241bb40ab73effeb80d9f93afaad49359d159a5e61be51619fe813"
 dependencies = [
  "libc",
 ]
@@ -124,7 +133,7 @@ checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 [[package]]
 name = "inout"
 version = "0.1.3"
-source = "git+https://github.com/Zeegomo/utils?rev=31988bc5b666f98747eb8521ce9d20f4b9a4419a#31988bc5b666f98747eb8521ce9d20f4b9a4419a"
+source = "git+https://github.com/Zeegomo/utils?rev=20836f85a4f21e761d52f220dd7790c9f9ddb4d2#20836f85a4f21e761d52f220dd7790c9f9ddb4d2"
 dependencies = [
  "block-padding",
  "generic-array",
@@ -135,6 +144,15 @@ name = "libc"
 version = "0.2.132"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8371e4e5341c3a96db127eb2465ac681ced4c433e01dd0e938adbef26ba93ba5"
+
+[[package]]
+name = "proc-macro2"
+version = "1.0.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a2ca2c61bc9f3d74d2886294ab7b9853abd9c1ad903a3ac7815c58989bb7bab"
+dependencies = [
+ "unicode-ident",
+]
 
 [[package]]
 name = "pulp-wrapper"
@@ -149,9 +167,18 @@ dependencies = [
 [[package]]
 name = "pulp_sdk_rust"
 version = "0.1.0"
-source = "git+https://github.com/Zeegomo/pulp-sdk-rust#91f607b1602084256e4fc34e84df5c1bea178b52"
+source = "git+https://github.com/Zeegomo/pulp-sdk-rust#c3cb9369ae6d2a3ea89fd6abc36526cd70b393b7"
 dependencies = [
  "cty",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbe448f377a7d6961e30f5955f9b8d106c3f5e449d493ee1b125c1d43c2b5179"
+dependencies = [
+ "proc-macro2",
 ]
 
 [[package]]
@@ -179,10 +206,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tmp"
+version = "0.1.0"
+dependencies = [
+ "asm-macros",
+]
+
+[[package]]
 name = "typenum"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dcf81ac59edc17cc8697ff311e8f5ef2d99fcbd9817b34cec66f90b6c3dfd987"
+
+[[package]]
+name = "unicode-ident"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4f5b37a154999a8f3f98cc23a628d850e154479cd94decf3414696e12e31aaf"
 
 [[package]]
 name = "version_check"

@@ -33,22 +33,69 @@ impl<'a, R: Unsigned> StreamBackend for Backend<'a, R> {
     }
 }
 
+macro_rules! qr {
+    ($a:expr, $b:expr, $c:expr, $d:expr) => {
+        concat!(
+            asm_macros::add!($a, $a, $b), "\n",
+            asm_macros::xor!($d, $d, $a), "\n",
+            asm_macros::ror!($d, $d, 5),  "\n",
+            asm_macros::add!($c, $c, $d), "\n",
+            asm_macros::xor!($b, $b, $c), "\n",
+            asm_macros::ror!($b, $b, 6),  "\n",
+            asm_macros::add!($a, $a, $b), "\n",
+            asm_macros::xor!($d, $d, $a), "\n",
+            asm_macros::ror!($d, $d, 7),  "\n",
+            asm_macros::add!($c, $c, $d), "\n",
+            asm_macros::xor!($b, $b, $c), "\n",
+            asm_macros::ror!($b, $b, 15), "\n",
+        )
+    };
+}
+
+macro_rules! full_round {
+    ($iter:expr, $state:expr) => {
+        unsafe {
+            core::arch::asm!(
+                qr!(16, 20, 24, 28),
+                qr!(17, 21, 25, 29),
+                qr!(18, 22, 26, 30),
+                qr!(19, 23, 27, 31),
+                qr!(16, 21, 26, 31),
+                qr!(17, 22, 27, 28),
+                qr!(18, 23, 24, 29),
+                qr!(19, 20, 25, 30),
+                inout("x16") $state[0],
+                inout("x17") $state[1],
+                inout("x18") $state[2],
+                inout("x19") $state[3],
+                inout("x20") $state[4],
+                inout("x21") $state[5],
+                inout("x22") $state[6],
+                inout("x23") $state[7],
+                inout("x24") $state[8],
+                inout("x25") $state[9],
+                inout("x26") $state[10],
+                inout("x27") $state[11],
+                inout("x28") $state[12],
+                inout("x29") $state[13],
+                inout("x30") $state[14],
+                inout("x31") $state[15],
+                in("x5") 16,
+                in("x6") 20,
+                in("x7") 24,
+                in("x15") 25,
+                options(pure, nomem)
+            )
+        }
+        
+    };
+}
+
 #[inline(always)]
 fn run_rounds<R: Unsigned>(state: [u32; STATE_WORDS]) -> [u32; STATE_WORDS] {
     let mut res = state;
     for _ in 0..R::USIZE {
-        
-        // column rounds
-        quarter_round(0, 4, 8, 12, &mut res);
-        quarter_round(1, 5, 9, 13, &mut res);
-        quarter_round(2, 6, 10, 14, &mut res);
-        quarter_round(3, 7, 11, 15, &mut res);
-
-        // diagonal rounds
-        quarter_round(0, 5, 10, 15, &mut res);
-        quarter_round(1, 6, 11, 12, &mut res);
-        quarter_round(2, 7, 8, 13, &mut res);
-        quarter_round(3, 4, 9, 14, &mut res);
+        full_round!(TODO, res);
     }
 
     for (s1, s0) in res.iter_mut().zip(state.iter()) {
@@ -57,35 +104,40 @@ fn run_rounds<R: Unsigned>(state: [u32; STATE_WORDS]) -> [u32; STATE_WORDS] {
     res
 }
 
-// /// The ChaCha20 quarter round function
-#[inline(always)]
-fn quarter_round(a: usize, b: usize, c: usize, d: usize, state: &mut [u32; STATE_WORDS], s1: u32, s2: u32, s3: u32) {
-  
-    unsafe {
-        core::arch::asm!(
-            "add {sa}, {sa}, {sb}",
-            "xor t0, {sd}, {sa}",
-            ".4byte 0x922d2b3", // ror t0, t0, s2
-            "add {sc}, {sc}, t0", // sc = sc + sd
-            "xor t1, {sb}, {sc}",
-            ".4byte 0x9335333", // TODO ror t1, t1, s3
-            "add {sa}, t1, {sa}",
-            "xor t0, t0, {sa}",
-            ".4byte 0x942d2b3", // TODO ror t0, t0, s4
-            "add {sc}, t0, {sc}",
-            "xor t1, {sc}, t1",
-            ".4byte 0x9535333", // TODO ror t1, t1, s5,
-            sa = inout(reg) state[a],
-            sb = in(reg) state[b],
-            sc =  inout(reg) state[c],
-            sd = in(reg) state[d],
-            out("t0") state[d],
-            out("t2") state[c],
-            in("s2") s1,
-            in("s3") s2,
-            in("s4") s3,
-            in("s5") s3,
-            options(nomem)
-        )
-    }
-}
+// // /// The ChaCha20 quarter round function
+// #[inline(always)]
+// fn quarter_round(
+//     a: usize,
+//     b: usize,
+//     c: usize,
+//     d: usize,
+//     state: &mut [u32; STATE_WORDS],
+// ) {
+//     unsafe {
+//         core::arch::asm!(
+//             "add {sa}, {sa}, {sb}",
+//             "xor t0, {sd}, {sa}",
+//             ".4byte 0x922d2b3", // ror t0, t0, s2
+//             "add {sc}, {sc}, t0", // sc = sc + sd
+//             "xor t1, {sb}, {sc}",
+//             ".4byte 0x9335333", // TODO ror t1, t1, s3
+//             "add {sa}, t1, {sa}",
+//             "xor t0, t0, {sa}",
+//             ".4byte 0x942d2b3", // TODO ror t0, t0, s4
+//             "add {sc}, t0, {sc}",
+//             "xor t1, {sc}, t1",
+//             ".4byte 0x9535333", // TODO ror t1, t1, s5,
+//             sa = inout(reg) state[a],
+//             sb = in(reg) state[b],
+//             sc =  inout(reg) state[c],
+//             sd = in(reg) state[d],
+//             out("t0") state[d],
+//             out("t2") state[c],
+//             in("s2") 16,
+//             in("s3") 20,
+//             in("s4") 24,
+//             in("s5") 25,
+//             options(nomem)
+//         )
+//     }
+// }

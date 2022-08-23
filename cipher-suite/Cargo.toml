@@ -16,3 +16,4 @@ pulp_sdk_rust = { git = " https://github.com/Zeegomo/pulp-sdk-rust" }
 cty = "0.2"
 generic-array = "*"
 cipher = "0.4.2"
+chacha20_orig = { version = "*", package = "chacha20" }
