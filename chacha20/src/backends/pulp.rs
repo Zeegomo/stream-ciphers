@@ -21,41 +21,64 @@ impl<'a, R: Unsigned> StreamBackend for Backend<'a, R> {
     #[inline(always)]
     fn gen_ks_block(&mut self, block: &mut Block) {
         let res = run_rounds::<R>(self.0.state);
-        self.0.state[12] = self.0.state[12].wrapping_add(1);
+        
+
+        // unsafe { 
+        //     core::arch::asm!(
+        //         asm_macros::lp_setupi!(0, 8, 8),
+        //         asm_macros::lw_pi!(t0, 4(a0!)),
+        //         asm_macros::lw_pi!(t1, 4(a0!)),
+        //         asm_macros::sw_pi!(t0, 4(a1!)),
+        //         asm_macros::sw_pi!(t1, 4(a1!)),
+        //         in("a0") block.as_mut_ptr() as *mut u32,
+        //         in("a1") &res as *const u32,
+        //     );
+        // }
 
         for (chunk, val) in block.chunks_exact_mut(4).zip(res.iter()) {
-            // is this little endian?
-            let chunk = chunk.as_mut_ptr() as *mut u32;
-            unsafe {
-                core::ptr::write(chunk, *val);
-            }
+            chunk.copy_from_slice(&val.to_le_bytes());
         }
+
+        self.0.state[12] = self.0.state[12].wrapping_add(1);
     }
 }
 
 macro_rules! qr {
     ($a:expr, $b:expr, $c:expr, $d:expr) => {
         concat!(
-            asm_macros::add!($a, $a, $b), "\n",
-            asm_macros::xor!($d, $d, $a), "\n",
-            asm_macros::ror!($d, $d, 5),  "\n",
-            asm_macros::add!($c, $c, $d), "\n",
-            asm_macros::xor!($b, $b, $c), "\n",
-            asm_macros::ror!($b, $b, 6),  "\n",
-            asm_macros::add!($a, $a, $b), "\n",
-            asm_macros::xor!($d, $d, $a), "\n",
-            asm_macros::ror!($d, $d, 7),  "\n",
-            asm_macros::add!($c, $c, $d), "\n",
-            asm_macros::xor!($b, $b, $c), "\n",
-            asm_macros::ror!($b, $b, 15), "\n",
+            asm_macros::add!($a, $a, $b),
+            "\n",
+            asm_macros::xor!($d, $d, $a),
+            "\n",
+            asm_macros::ror!($d, $d, 5),
+            "\n",
+            asm_macros::add!($c, $c, $d),
+            "\n",
+            asm_macros::xor!($b, $b, $c),
+            "\n",
+            asm_macros::ror!($b, $b, 6),
+            "\n",
+            asm_macros::add!($a, $a, $b),
+            "\n",
+            asm_macros::xor!($d, $d, $a),
+            "\n",
+            asm_macros::ror!($d, $d, 7),
+            "\n",
+            asm_macros::add!($c, $c, $d),
+            "\n",
+            asm_macros::xor!($b, $b, $c),
+            "\n",
+            asm_macros::ror!($b, $b, 15),
+            "\n",
         )
     };
 }
 
 macro_rules! full_round {
-    ($iter:expr, $state:expr) => {
+    ($state:expr) => {
         unsafe {
             core::arch::asm!(
+                asm_macros::lp_setup!(0, 14, 160),
                 qr!(16, 20, 24, 28),
                 qr!(17, 21, 25, 29),
                 qr!(18, 22, 26, 30),
@@ -84,60 +107,37 @@ macro_rules! full_round {
                 in("x6") 20,
                 in("x7") 24,
                 in("x15") 25,
+                in("x14") 10,
                 options(pure, nomem)
             )
         }
-        
+
     };
 }
 
 #[inline(always)]
 fn run_rounds<R: Unsigned>(state: [u32; STATE_WORDS]) -> [u32; STATE_WORDS] {
     let mut res = state;
-    for _ in 0..R::USIZE {
-        full_round!(TODO, res);
-    }
-
-    for (s1, s0) in res.iter_mut().zip(state.iter()) {
-        *s1 = s1.wrapping_add(*s0);
-    }
+    
+    full_round!(res);
+    
+    
+    
+    res[0] = res[0].wrapping_add(state[0]);
+    res[1] = res[1].wrapping_add(state[1]);
+    res[2] = res[2].wrapping_add(state[2]);
+    res[3] = res[3].wrapping_add(state[3]);
+    res[4] = res[4].wrapping_add(state[4]);
+    res[5] = res[5].wrapping_add(state[5]);
+    res[6] = res[6].wrapping_add(state[6]);
+    res[7] = res[7].wrapping_add(state[7]);
+    res[8] = res[8].wrapping_add(state[8]);
+    res[9] = res[9].wrapping_add(state[9]);
+    res[10] = res[10].wrapping_add(state[10]);
+    res[11] = res[11].wrapping_add(state[11]);
+    res[12] = res[12].wrapping_add(state[12]);
+    res[13] = res[13].wrapping_add(state[13]);
+    res[14] = res[14].wrapping_add(state[14]);
+    res[15] = res[15].wrapping_add(state[15]);
     res
 }
-
-// // /// The ChaCha20 quarter round function
-// #[inline(always)]
-// fn quarter_round(
-//     a: usize,
-//     b: usize,
-//     c: usize,
-//     d: usize,
-//     state: &mut [u32; STATE_WORDS],
-// ) {
-//     unsafe {
-//         core::arch::asm!(
-//             "add {sa}, {sa}, {sb}",
-//             "xor t0, {sd}, {sa}",
-//             ".4byte 0x922d2b3", // ror t0, t0, s2
-//             "add {sc}, {sc}, t0", // sc = sc + sd
-//             "xor t1, {sb}, {sc}",
-//             ".4byte 0x9335333", // TODO ror t1, t1, s3
-//             "add {sa}, t1, {sa}",
-//             "xor t0, t0, {sa}",
-//             ".4byte 0x942d2b3", // TODO ror t0, t0, s4
-//             "add {sc}, t0, {sc}",
-//             "xor t1, {sc}, t1",
-//             ".4byte 0x9535333", // TODO ror t1, t1, s5,
-//             sa = inout(reg) state[a],
-//             sb = in(reg) state[b],
-//             sc =  inout(reg) state[c],
-//             sd = in(reg) state[d],
-//             out("t0") state[d],
-//             out("t2") state[c],
-//             in("s2") 16,
-//             in("s3") 20,
-//             in("s4") 24,
-//             in("s5") 25,
-//             options(nomem)
-//         )
-//     }
-// }

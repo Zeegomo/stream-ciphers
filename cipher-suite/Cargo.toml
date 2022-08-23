@@ -9,6 +9,7 @@ crate-type = ["staticlib", "lib"]
 
 [dependencies]
 pulp-wrapper = { path = "../pulp-wrapper" }
+asm-macros = { path = "../asm-macros" }
 chacha20 = { path = "../chacha20" }
 rc4 = { path = "../rc4" }
 rabbit = { path = "../rabbit" }

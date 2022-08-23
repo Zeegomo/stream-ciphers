@@ -4,14 +4,14 @@
 #![feature(new_uninit)]
 extern crate alloc;
 
+use crate::alloc::string::ToString;
 use alloc::boxed::Box;
 use chacha20::ChaCha20;
 use cipher::{IvSizeUser, KeySizeUser, Unsigned};
 use core::pin::Pin;
 use generic_array::GenericArray;
-use pulp_sdk_rust::{abort_all, GlobalAllocator, PiDevice, print};
+use pulp_sdk_rust::{abort_all, print, GlobalAllocator, PiDevice};
 use pulp_wrapper::{Cluster, PulpWrapper, SourceLocation};
-use crate::alloc::string::ToString;
 // This should not actually be used, as it's not clear from the context what the default allocation is
 #[global_allocator]
 static DEFAULT_ALLOCATOR: GlobalAllocator = GlobalAllocator;

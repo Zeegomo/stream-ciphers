@@ -1,7 +1,7 @@
 use proc_macro::*;
 use std::collections::HashMap;
 
-fn get_reg_operands(input: TokenStream) -> (u8, u8, u8) {
+fn get_reg_operands(input: TokenStream) -> (u32, u32, u32) {
     let reg_map = vec![
         ("t0", 5),
         ("t1", 6),
@@ -19,7 +19,7 @@ fn get_reg_operands(input: TokenStream) -> (u8, u8, u8) {
         ("s4", 20),
     ]
     .into_iter()
-    .collect::<HashMap<_, u8>>();
+    .collect::<HashMap<_, u32>>();
     
     let ops = input
         .into_iter()
@@ -31,7 +31,7 @@ fn get_reg_operands(input: TokenStream) -> (u8, u8, u8) {
         .take(3)
         .map(|t| {
             let t = t.to_string();
-            if let Ok(n) = t.parse::<u8>() {
+            if let Ok(n) = t.parse::<u32>() {
                 n
             } else if let Some(n) = reg_map.get(t.as_str()) {
                 *n
@@ -47,11 +47,11 @@ fn get_reg_operands(input: TokenStream) -> (u8, u8, u8) {
     (ops[0], ops[1], ops[2])
 }
 
-fn bin_5(x: u8) -> String {
+fn bin_5(x: u32) -> String {
     format!("{:05b}", x)
 }
 
-fn bin_11(x: u8) -> String {
+fn bin_11(x: u32) -> String {
     format!("{:011b}", x)
 }
 
