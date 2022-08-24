@@ -120,7 +120,9 @@ use cipher::{
     generic_array::{typenum::Unsigned, GenericArray},
     BlockSizeUser, IvSizeUser, KeyIvInit, KeySizeUser, StreamCipherCore, StreamCipherCoreWrapper,
     StreamCipherSeekCore, StreamClosure,
+    inout::{InOut, InOutBuf},
 };
+
 use core::marker::PhantomData;
 
 #[cfg(feature = "zeroize")]
@@ -290,7 +292,20 @@ impl<R: Unsigned> StreamCipherCore for ChaChaCore<R> {
             }
         }
     }
+
+    #[cfg(target_arch = "riscv32")]
+    fn apply_keystream_blocks_inout(&mut self, blocks: InOutBuf<'_, '_, Block>) {
+        for block in blocks {
+            backends::pulp::Backend(self)._apply_keystream_block_inout(block);
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    fn apply_keystream_block_inout(&mut self, block :InOut<'_, '_, Block>) {
+        backends::pulp::Backend(self)._apply_keystream_block_inout(block);
+    }
 }
+
 
 impl<R: Unsigned> StreamCipherSeekCore for ChaChaCore<R> {
     type Counter = u32;
@@ -317,3 +332,4 @@ impl<R: Unsigned> Drop for ChaChaCore<R> {
 #[cfg(feature = "zeroize")]
 #[cfg_attr(docsrs, doc(cfg(feature = "zeroize")))]
 impl<R: Unsigned> ZeroizeOnDrop for ChaChaCore<R> {}
+
