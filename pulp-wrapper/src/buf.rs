@@ -198,7 +198,6 @@ impl<const CORES: usize> DmaBuf<CORES> {
     /// * should only be called from within a PULP cluster
     #[inline]
     pub fn advance(&mut self) {
-        pi_cl_team_barrier();
         self.rounds += 1;
         let a = self.counters[0];
         self.counters[0] = self.counters[1];
@@ -209,7 +208,7 @@ impl<const CORES: usize> DmaBuf<CORES> {
         unsafe {
             let offset = (self.rounds + 1) * self.buf_size;
             let size = core::cmp::min(
-                self.source_len.checked_sub(offset).unwrap_or_default(),
+                self.source_len.saturating_sub(offset),
                 self.buf_size,
             );
             if pi_core_id() == 0 {
@@ -219,6 +218,8 @@ impl<const CORES: usize> DmaBuf<CORES> {
                     // wait dma completed on current work buf
                     self.pre_fetch_dma.wait();
                 }
+
+                pi_cl_team_barrier();
 
                 // start dma out (commit)
                 let commit_buf_ptr = self.get_commit_buf_ptr();
@@ -237,11 +238,14 @@ impl<const CORES: usize> DmaBuf<CORES> {
                         size,
                     );
                 }
+            } else {
+                // everyone has to wait for transfers to be finished
+                pi_cl_team_barrier();
             }
+
             self.work_buf_len = self.last_transfer;
             self.last_transfer = size;
-            // everyone has to wait for transfers to be finished
-            pi_cl_team_barrier();
+            
         }
     }
 
@@ -299,7 +303,7 @@ impl<'a> Deref for SmartBuf<'a> {
         let base = core_id * self.core_buf_size;
         let len = core::cmp::min(
             self.core_buf_size,
-            self.len.checked_sub(base).unwrap_or_default(),
+            self.len.saturating_sub(base)
         );
         unsafe { core::slice::from_raw_parts::<'a, _>(self.buf.add(base), len) }
     }
@@ -310,7 +314,7 @@ impl<'a> DerefMut for SmartBuf<'a> {
         let base = core_id * self.core_buf_size;
         let len = core::cmp::min(
             self.core_buf_size,
-            self.len.checked_sub(base).unwrap_or_default(),
+            self.len.saturating_sub(base),
         );
         unsafe { core::slice::from_raw_parts_mut::<'a, _>(self.buf.add(base), len) }
     }
