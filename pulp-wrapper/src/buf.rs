@@ -1,7 +1,30 @@
+use crate::Cluster;
 use ::pulp_sdk_rust::*;
 use cipher::inout::InOutBuf;
+use core::pin::Pin;
 use core::marker::PhantomPinned;
 use core::ops::{Deref, DerefMut};
+use alloc::boxed::Box;
+
+// newtype around naked pointer to guarantee proper allocation
+pub(crate) struct BufAlloc<const BUF_LEN: usize> {
+    buf: *mut u8,
+    allocator: ClusterAllocator,
+}
+
+impl<const BUF_LEN: usize> BufAlloc<BUF_LEN> {
+    pub fn new(cluster: &mut Cluster) -> Self {
+        let device_ptr = unsafe { Pin::get_unchecked_mut(cluster.device_mut()) as *mut PiDevice };
+        let allocator = ClusterAllocator::new(device_ptr);
+        // SAFETY: u8 are always valid, and this will be overwritten before actual use by DMA
+        let buf = unsafe { Box::leak(Box::new_uninit_slice_in(BUF_LEN * 3, allocator).assume_init()) };
+
+        Self {
+            buf: buf.as_mut_ptr(),
+            allocator,
+        }
+    }
+}
 
 /// A managed buffer in L1 cache with automatic DMA transfers in and out based on
 /// rounds
@@ -22,7 +45,7 @@ use core::ops::{Deref, DerefMut};
 ///   dma in (pre-fetch) dma out (commit) work
 ///         |              |              |
 /// |--------------|--------------|---------------|
-pub struct DmaBuf<const CORES: usize> {
+pub(crate) struct DmaBuf<'buf, const CORES: usize, const BUF_LEN: usize> {
     // data in external memory
     source: *mut u8,
     source_len: usize,
@@ -30,7 +53,7 @@ pub struct DmaBuf<const CORES: usize> {
     // Ideally the blocks are layed out in memory so that each core's block lays entirely on a different l1 bank so that we minimize contention
     // on the same bank. Probably we could force this knowing the memory addresses layout
     // DMA should also operate on separate banks
-    l1_alloc: *mut u8,
+    l1_alloc: &'buf BufAlloc<BUF_LEN>,
     // how many rounds have been completed till now
     rounds: usize,
     pre_fetch_dma: DmaTransfer,
@@ -103,23 +126,20 @@ impl DmaTransfer {
     }
 }
 
-impl<const CORES: usize> DmaBuf<CORES> {
+impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN> {
     fn common(
         source: *mut u8,
         source_len: usize,
-        l1_alloc: *mut u8,
-        l1_alloc_len: usize,
+        l1_alloc: &'buf BufAlloc<BUF_LEN>,
         mut pre_fetch_dma: DmaTransfer,
         commit_dma: DmaTransfer,
     ) -> Self {
-        assert_eq!(l1_alloc_len % 3, 0);
-        let buf_size = l1_alloc_len / 3;
-        assert_eq!(buf_size % CORES, 0);
+        assert_eq!(BUF_LEN % CORES, 0);
         unsafe {
-            let size = core::cmp::min(buf_size * 2, source_len);
+            let size = core::cmp::min(BUF_LEN * 2, source_len);
             // initialize first buffer
             if pi_core_id() == 0 {
-                pre_fetch_dma.transfer_in(source, l1_alloc, size);
+                pre_fetch_dma.transfer_in(source, l1_alloc.buf, size);
                 pre_fetch_dma.wait();
             }
             pi_cl_team_barrier();
@@ -131,14 +151,14 @@ impl<const CORES: usize> DmaBuf<CORES> {
             l1_alloc,
             pre_fetch_dma,
             commit_dma,
-            buf_size,
+            buf_size: BUF_LEN,
             rounds: 0,
-            counters: [0, buf_size, buf_size * 2],
+            counters: [0, BUF_LEN, BUF_LEN * 2],
             last_transfer: core::cmp::min(
-                buf_size,
-                source_len.checked_sub(buf_size).unwrap_or_default(),
+                BUF_LEN,
+                source_len.checked_sub(BUF_LEN).unwrap_or_default(),
             ),
-            work_buf_len: core::cmp::min(buf_size, source_len),
+            work_buf_len: core::cmp::min(BUF_LEN, source_len),
         }
     }
 
@@ -151,15 +171,13 @@ impl<const CORES: usize> DmaBuf<CORES> {
     pub fn new_from_ram(
         source: *mut u8,
         source_len: usize,
-        l1_alloc: *mut u8,
-        l1_alloc_len: usize,
+        l1_alloc: &'buf BufAlloc<BUF_LEN>,
         device: *mut PiDevice,
     ) -> Self {
         Self::common(
             source,
             source_len,
             l1_alloc,
-            l1_alloc_len,
             DmaTransfer::new_ram(device),
             DmaTransfer::new_ram(device),
         )
@@ -174,14 +192,12 @@ impl<const CORES: usize> DmaBuf<CORES> {
     pub fn new_from_l2(
         source: *mut u8,
         source_len: usize,
-        l1_alloc: *mut u8,
-        l1_alloc_len: usize,
+        l1_alloc: &'buf BufAlloc<BUF_LEN>,
     ) -> Self {
         Self::common(
             source,
             source_len,
             l1_alloc,
-            l1_alloc_len,
             DmaTransfer::new_l2(),
             DmaTransfer::new_l2(),
         )
@@ -208,10 +224,7 @@ impl<const CORES: usize> DmaBuf<CORES> {
         // (this is unsafe only because those are FFI calls)
         unsafe {
             let offset = (self.rounds + 1) * self.buf_size;
-            let size = core::cmp::min(
-                self.source_len.saturating_sub(offset),
-                self.buf_size,
-            );
+            let size = core::cmp::min(self.source_len.saturating_sub(offset), self.buf_size);
             if pi_core_id() == 0 {
                 if self.rounds > 1 {
                     // wait dma completed on commit buf before using it as pre-fetch (should not actually wait in practice)
@@ -246,7 +259,6 @@ impl<const CORES: usize> DmaBuf<CORES> {
 
             self.work_buf_len = self.last_transfer;
             self.last_transfer = size;
-            
         }
     }
 
@@ -269,18 +281,18 @@ impl<const CORES: usize> DmaBuf<CORES> {
         let base = core_buf_len * unsafe { pi_core_id() };
         let len = core::cmp::min(core_buf_len, self.work_buf_len.saturating_sub(base));
         unsafe {
-            let ptr = self.l1_alloc.add(base);
+            let ptr = self.l1_alloc.buf.add(base);
             InOutBuf::from_raw(ptr as *const u8, ptr, len)
         }
     }
 
     #[inline(always)]
     fn get_pre_fetch_buf_ptr(&mut self) -> *mut u8 {
-        unsafe { self.l1_alloc.add(self.counters[1]) }
+        unsafe { self.l1_alloc.buf.add(self.counters[1]) }
     }
 
     #[inline(always)]
     fn get_commit_buf_ptr(&mut self) -> *mut u8 {
-        unsafe { self.l1_alloc.add(self.counters[2]) }
+        unsafe { self.l1_alloc.buf.add(self.counters[2]) }
     }
 }
