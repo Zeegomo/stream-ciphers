@@ -20,7 +20,7 @@ fn get_reg_operands(input: TokenStream) -> (u32, u32, u32) {
     ]
     .into_iter()
     .collect::<HashMap<_, u32>>();
-    
+
     let ops = input
         .into_iter()
         .flat_map(|t| match t {
