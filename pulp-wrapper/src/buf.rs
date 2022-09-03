@@ -58,7 +58,6 @@ pub(crate) struct DmaBuf<'buf, const CORES: usize, const BUF_LEN: usize> {
     rounds: usize,
     pre_fetch_dma: DmaTransfer,
     commit_dma: DmaTransfer,
-    buf_size: usize,
     counters: [usize; 3],
     last_transfer: usize,
     work_buf_len: usize,
@@ -151,7 +150,6 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
             l1_alloc,
             pre_fetch_dma,
             commit_dma,
-            buf_size: BUF_LEN,
             rounds: 0,
             counters: [0, BUF_LEN, BUF_LEN * 2],
             last_transfer: core::cmp::min(
@@ -204,7 +202,7 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
     }
 
     pub fn work_buf_len(&self) -> usize {
-        self.buf_size
+        BUF_LEN
     }
 
     /// Signal that work has completed on the current 'work' buffer
@@ -223,8 +221,8 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
         // Only core 0 interacts with the dma
         // (this is unsafe only because those are FFI calls)
         unsafe {
-            let offset = (self.rounds + 1) * self.buf_size;
-            let size = core::cmp::min(self.source_len.saturating_sub(offset), self.buf_size);
+            let offset = (self.rounds + 1) * BUF_LEN;
+            let size = core::cmp::min(self.source_len.saturating_sub(offset), BUF_LEN);
             if pi_core_id() == 0 {
                 if self.rounds > 1 {
                     // wait dma completed on commit buf before using it as pre-fetch (should not actually wait in practice)
@@ -238,7 +236,7 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
                 // start dma out (commit)
                 let commit_buf_ptr = self.get_commit_buf_ptr();
                 self.commit_dma.transfer_out(
-                    self.source.add((self.rounds - 1) * self.buf_size),
+                    self.source.add((self.rounds - 1) * BUF_LEN),
                     commit_buf_ptr,
                     self.work_buf_len,
                 );
@@ -277,7 +275,7 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
     /// Get mutable pointers to working core buffer
     #[inline(always)]
     pub fn get_work_buf<'a>(&'a mut self) -> InOutBuf<'a, 'a, u8> {
-        let core_buf_len = self.buf_size / CORES;
+        let core_buf_len = BUF_LEN / CORES;
         let base = core_buf_len * unsafe { pi_core_id() };
         let len = core::cmp::min(core_buf_len, self.work_buf_len.saturating_sub(base));
         unsafe {
