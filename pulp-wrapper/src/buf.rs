@@ -1,15 +1,24 @@
 use crate::Cluster;
 use ::pulp_sdk_rust::*;
-use cipher::inout::InOutBuf;
-use core::pin::Pin;
-use core::marker::PhantomPinned;
-use core::ops::{Deref, DerefMut};
 use alloc::boxed::Box;
+use cipher::inout::InOutBuf;
+use core::marker::{PhantomData, PhantomPinned};
+use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
-// newtype around naked pointer to guarantee proper allocation
+// newtype around naked pointer to guarantee proper allocation and handling
 pub(crate) struct BufAlloc<const BUF_LEN: usize> {
     buf: *mut u8,
     allocator: ClusterAllocator,
+}
+
+// Newtype around naked pointer to guarantee proper handling
+//
+// Conceptually a mutable slice but with aliasing in different cores
+pub(crate) struct SourcePtr<'a> {
+    ptr: *mut u8,
+    len: usize,
+    _lifetime: PhantomData<&'a u8>,
 }
 
 impl<const BUF_LEN: usize> BufAlloc<BUF_LEN> {
@@ -17,11 +26,42 @@ impl<const BUF_LEN: usize> BufAlloc<BUF_LEN> {
         let device_ptr = unsafe { Pin::get_unchecked_mut(cluster.device_mut()) as *mut PiDevice };
         let allocator = ClusterAllocator::new(device_ptr);
         // SAFETY: u8 are always valid, and this will be overwritten before actual use by DMA
-        let buf = unsafe { Box::leak(Box::new_uninit_slice_in(BUF_LEN * 3, allocator).assume_init()) };
+        let buf =
+            unsafe { Box::leak(Box::new_uninit_slice_in(BUF_LEN * 3, allocator).assume_init()) };
 
         Self {
             buf: buf.as_mut_ptr(),
             allocator,
+        }
+    }
+}
+
+impl<'a> SourcePtr<'a> {
+    /// # Safety
+    /// The memory referenced by the slice must not be accessed through any
+    /// other pointer (including the original slice) for the duration of
+    /// lifetime 'a. Both read and write accesses are forbidden.
+    pub unsafe fn from_mut_slice(slice: &'a mut [u8]) -> Self {
+        SourcePtr {
+            ptr: slice.as_mut_ptr(),
+            len: slice.len(),
+            _lifetime: PhantomData,
+        }
+    }
+
+    /// # Safety
+    /// Behavior is undefined if any of the following conditions are violated:
+    /// - `ptr` must point to a properly initialized value of type `T` and
+    /// must be valid for reads.
+    /// - `in_ptr` and `out_ptr` must be either equal or non-overlapping.
+    /// - The memory referenced by ptr must not be accessed through any other pointer
+    /// (not derived from the return value) for the duration of lifetime 'a.
+    /// Both read and write accesses are forbidden.
+    pub unsafe fn from_raw_parts(ptr: *mut u8, len: usize) -> Self {
+        SourcePtr {
+            ptr,
+            len,
+            _lifetime: PhantomData,
         }
     }
 }
@@ -45,10 +85,9 @@ impl<const BUF_LEN: usize> BufAlloc<BUF_LEN> {
 ///   dma in (pre-fetch) dma out (commit) work
 ///         |              |              |
 /// |--------------|--------------|---------------|
-pub(crate) struct DmaBuf<'buf, const CORES: usize, const BUF_LEN: usize> {
+pub(crate) struct DmaBuf<'buf, 'source, const CORES: usize, const BUF_LEN: usize> {
     // data in external memory
-    source: *mut u8,
-    source_len: usize,
+    source: SourcePtr<'source>,
     // allocation in L1 cache
     // Ideally the blocks are layed out in memory so that each core's block lays entirely on a different l1 bank so that we minimize contention
     // on the same bank. Probably we could force this knowing the memory addresses layout
@@ -125,28 +164,29 @@ impl DmaTransfer {
     }
 }
 
-impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN> {
+impl<'buf, 'source, const CORES: usize, const BUF_LEN: usize>
+    DmaBuf<'buf, 'source, CORES, BUF_LEN>
+{
+    pub const FULL_WORK_BUF_LEN: usize = BUF_LEN;
+
     fn common(
-        source: *mut u8,
-        source_len: usize,
+        source: SourcePtr<'source>,
         l1_alloc: &'buf BufAlloc<BUF_LEN>,
         mut pre_fetch_dma: DmaTransfer,
         commit_dma: DmaTransfer,
     ) -> Self {
         assert_eq!(BUF_LEN % CORES, 0);
         unsafe {
-            let size = core::cmp::min(BUF_LEN * 2, source_len);
+            let size = core::cmp::min(BUF_LEN * 2, source.len);
             // initialize first buffer
             if pi_core_id() == 0 {
-                pre_fetch_dma.transfer_in(source, l1_alloc.buf, size);
+                pre_fetch_dma.transfer_in(source.ptr, l1_alloc.buf, size);
                 pre_fetch_dma.wait();
             }
             pi_cl_team_barrier();
         }
 
         Self {
-            source,
-            source_len,
             l1_alloc,
             pre_fetch_dma,
             commit_dma,
@@ -154,27 +194,24 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
             counters: [0, BUF_LEN, BUF_LEN * 2],
             last_transfer: core::cmp::min(
                 BUF_LEN,
-                source_len.checked_sub(BUF_LEN).unwrap_or_default(),
+                source.len.checked_sub(BUF_LEN).unwrap_or_default(),
             ),
-            work_buf_len: core::cmp::min(BUF_LEN, source_len),
+            work_buf_len: core::cmp::min(BUF_LEN, source.len),
+            source,
         }
     }
 
     /// Build a new managed L1 cluster buffer backing a ram memory allocation
     ///
     /// Safety:
-    /// * source must be valid to read for source_len bytes
-    /// * l1_alloc must be valid to read / write for l1_alloc_len bytes
     /// * should only be called from within a PULP cluster
     pub fn new_from_ram(
-        source: *mut u8,
-        source_len: usize,
+        source: SourcePtr<'source>,
         l1_alloc: &'buf BufAlloc<BUF_LEN>,
         device: *mut PiDevice,
     ) -> Self {
         Self::common(
             source,
-            source_len,
             l1_alloc,
             DmaTransfer::new_ram(device),
             DmaTransfer::new_ram(device),
@@ -184,32 +221,19 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
     /// Build a new managed L1 cluster buffer backing a L2 memory allocation
     ///
     /// Safety:
-    /// * source must be valid to read for source_len bytes
-    /// * l1_alloc must be valid to read / write for l1_alloc_len bytes
     /// * should only be called from within a PULP cluster
-    pub fn new_from_l2(
-        source: *mut u8,
-        source_len: usize,
-        l1_alloc: &'buf BufAlloc<BUF_LEN>,
-    ) -> Self {
+    pub fn new_from_l2(source: SourcePtr<'source>, l1_alloc: &'buf BufAlloc<BUF_LEN>) -> Self {
         Self::common(
             source,
-            source_len,
             l1_alloc,
             DmaTransfer::new_l2(),
             DmaTransfer::new_l2(),
         )
     }
 
-    pub fn work_buf_len(&self) -> usize {
-        BUF_LEN
-    }
-
     /// Signal that work has completed on the current 'work' buffer
     ///
     /// Safety:
-    /// * source must be valid to read / write for source_len bytes
-    /// * l1_alloc must be valid to read / write for l1_alloc_len bytes
     /// * should only be called from within a PULP cluster
     #[inline]
     pub fn advance(&mut self) {
@@ -222,7 +246,7 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
         // (this is unsafe only because those are FFI calls)
         unsafe {
             let offset = (self.rounds + 1) * BUF_LEN;
-            let size = core::cmp::min(self.source_len.saturating_sub(offset), BUF_LEN);
+            let size = core::cmp::min(self.source.len.saturating_sub(offset), BUF_LEN);
             if pi_core_id() == 0 {
                 if self.rounds > 1 {
                     // wait dma completed on commit buf before using it as pre-fetch (should not actually wait in practice)
@@ -236,16 +260,16 @@ impl<'buf, const CORES: usize, const BUF_LEN: usize> DmaBuf<'buf, CORES, BUF_LEN
                 // start dma out (commit)
                 let commit_buf_ptr = self.get_commit_buf_ptr();
                 self.commit_dma.transfer_out(
-                    self.source.add((self.rounds - 1) * BUF_LEN),
+                    self.source.ptr.add((self.rounds - 1) * BUF_LEN),
                     commit_buf_ptr,
                     self.work_buf_len,
                 );
 
-                if offset < self.source_len {
+                if offset < self.source.len {
                     // start dma in (pre-fetch)
                     let pre_fetch_buf_ptr = self.get_pre_fetch_buf_ptr();
                     self.pre_fetch_dma.transfer_in(
-                        self.source.add(offset),
+                        self.source.ptr.add(offset),
                         pre_fetch_buf_ptr,
                         size,
                     );

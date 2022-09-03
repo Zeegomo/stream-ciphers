@@ -12,7 +12,7 @@ use generic_array::GenericArray;
 
 mod buf;
 mod cluster;
-use buf::{DmaBuf, BufAlloc};
+use buf::{BufAlloc, DmaBuf, SourcePtr};
 pub use cluster::Cluster;
 
 const fn parse_cores_u8(s: &str) -> usize {
@@ -108,6 +108,7 @@ impl PulpWrapper {
 
             // any lifetime will do as BufAlloc is owned by PulpWrapper
             let l1_alloc = &*l1_alloc;
+            let source = SourcePtr::from_raw_parts(source, len);
 
             let mut cipher = C::new(key, iv);
             let core_id = pi_core_id();
@@ -115,14 +116,14 @@ impl PulpWrapper {
             // To fit all data in L1 cache, we split input in rounds.
             let mut buf = match loc {
                 SourceLocation::L2 => {
-                    <DmaBuf<CORES, CLUSTER_L1_BUFFER_LEN>>::new_from_l2(source, len, l1_alloc)
+                    <DmaBuf<CORES, CLUSTER_L1_BUFFER_LEN>>::new_from_l2(source, l1_alloc)
                 }
                 SourceLocation::Ram(device) => {
-                    <DmaBuf<CORES, CLUSTER_L1_BUFFER_LEN>>::new_from_ram(source, len, l1_alloc, device)
+                    <DmaBuf<CORES, CLUSTER_L1_BUFFER_LEN>>::new_from_ram(source, l1_alloc, device)
                 }
                 _ => panic!("unsupported"),
             };
-            let round_buf_len = buf.work_buf_len();
+            let round_buf_len = <DmaBuf<CORES, CLUSTER_L1_BUFFER_LEN>>::FULL_WORK_BUF_LEN;
             let full_rounds = len / round_buf_len;
             let base = core_id * (round_buf_len / CORES);
             assert_eq!(round_buf_len % (BLOCK_SIZE * CORES), 0);
