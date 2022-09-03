@@ -1,4 +1,5 @@
 use ::pulp_sdk_rust::*;
+use cipher::inout::InOutBuf;
 use core::marker::PhantomPinned;
 use core::ops::{Deref, DerefMut};
 
@@ -261,17 +262,15 @@ impl<const CORES: usize> DmaBuf<CORES> {
         pi_cl_team_barrier();
     }
 
-    /// Get a mutable smart pointer to the current work buf
-    ///
-    /// Safety: It's not really unsafe to call this, but [SmartBuf] should only be
-    //// dereferenced in the PULP cluster
+    /// Get mutable pointers to working core buffer
     #[inline(always)]
-    pub unsafe fn get_work_buf(&mut self) -> SmartBuf {
-        SmartBuf {
-            buf: self.l1_alloc.add(self.counters[0]),
-            core_buf_size: self.buf_size / CORES,
-            len: self.work_buf_len,
-            _lifetime: core::marker::PhantomData,
+    pub fn get_work_buf<'a>(&'a mut self) -> InOutBuf<'a, 'a, u8> {
+        let core_buf_len = self.buf_size / CORES;
+        let base = core_buf_len * unsafe { pi_core_id() };
+        let len = core::cmp::min(core_buf_len, self.work_buf_len.saturating_sub(base));
+        unsafe {
+            let ptr = self.l1_alloc.add(base);
+            InOutBuf::from_raw(ptr as *const u8, ptr, len)
         }
     }
 
@@ -283,39 +282,5 @@ impl<const CORES: usize> DmaBuf<CORES> {
     #[inline(always)]
     fn get_commit_buf_ptr(&mut self) -> *mut u8 {
         unsafe { self.l1_alloc.add(self.counters[2]) }
-    }
-}
-
-// A smart pointer that automatically derefs to a different portion of the slice in each core
-// in the PULP cluster to avoid aliasing
-pub struct SmartBuf<'a> {
-    buf: *mut u8,
-    pub len: usize,
-    pub core_buf_size: usize,
-    // limit the lifetime of this buffer
-    _lifetime: core::marker::PhantomData<&'a u8>,
-}
-
-impl<'a> Deref for SmartBuf<'a> {
-    type Target = [u8];
-    fn deref(&self) -> &Self::Target {
-        let core_id = unsafe { pi_core_id() };
-        let base = core_id * self.core_buf_size;
-        let len = core::cmp::min(
-            self.core_buf_size,
-            self.len.saturating_sub(base)
-        );
-        unsafe { core::slice::from_raw_parts::<'a, _>(self.buf.add(base), len) }
-    }
-}
-impl<'a> DerefMut for SmartBuf<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        let core_id = unsafe { pi_core_id() };
-        let base = core_id * self.core_buf_size;
-        let len = core::cmp::min(
-            self.core_buf_size,
-            self.len.saturating_sub(base),
-        );
-        unsafe { core::slice::from_raw_parts_mut::<'a, _>(self.buf.add(base), len) }
     }
 }
