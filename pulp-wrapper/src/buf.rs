@@ -3,8 +3,8 @@ use ::pulp_sdk_rust::*;
 use alloc::boxed::Box;
 use cipher::inout::InOutBuf;
 use core::marker::{PhantomData, PhantomPinned};
-use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
+use core::ptr::NonNull;
 
 // newtype around naked pointer to guarantee proper allocation and handling
 pub(crate) struct BufAlloc<const BUF_LEN: usize> {
@@ -36,11 +36,23 @@ impl<const BUF_LEN: usize> BufAlloc<BUF_LEN> {
     }
 }
 
+impl<const BUF_LEN: usize> Drop for BufAlloc<BUF_LEN> {
+    fn drop(&mut self) {
+        let _ = unsafe {
+            Box::from_raw_in(
+                core::slice::from_raw_parts_mut(self.buf, BUF_LEN),
+                self.allocator,
+            )
+        };
+    }
+}
+
 impl<'a> SourcePtr<'a> {
     /// # Safety
     /// The memory referenced by the slice must not be accessed through any
     /// other pointer (including the original slice) for the duration of
     /// lifetime 'a. Both read and write accesses are forbidden.
+    #[allow(unused)]
     pub unsafe fn from_mut_slice(slice: &'a mut [u8]) -> Self {
         SourcePtr {
             ptr: slice.as_mut_ptr(),
@@ -124,9 +136,9 @@ impl DmaTransfer {
         }
     }
 
-    pub fn new_ram(ram: *mut PiDevice) -> Self {
+    pub fn new_ram(ram: NonNull<PiDevice>) -> Self {
         Self::Ram {
-            req: PiClRamReq::new(ram),
+            req: PiClRamReq::new(ram.as_ptr()),
             _pin: PhantomPinned,
         }
     }
@@ -208,7 +220,7 @@ impl<'buf, 'source, const CORES: usize, const BUF_LEN: usize>
     pub fn new_from_ram(
         source: SourcePtr<'source>,
         l1_alloc: &'buf BufAlloc<BUF_LEN>,
-        device: *mut PiDevice,
+        device: NonNull<PiDevice>,
     ) -> Self {
         Self::common(
             source,
@@ -298,7 +310,7 @@ impl<'buf, 'source, const CORES: usize, const BUF_LEN: usize>
 
     /// Get mutable pointers to working core buffer
     #[inline(always)]
-    pub fn get_work_buf<'a>(&'a mut self) -> InOutBuf<'a, 'a, u8> {
+    pub fn get_work_buf(&mut self) -> InOutBuf<'_, '_, u8> {
         let core_buf_len = BUF_LEN / CORES;
         let base = core_buf_len * unsafe { pi_core_id() };
         let len = core::cmp::min(core_buf_len, self.work_buf_len.saturating_sub(base));

@@ -3,7 +3,6 @@
 #![feature(new_uninit)]
 extern crate alloc;
 
-use alloc::boxed::Box;
 use cipher::{KeyIvInit, StreamCipher, StreamCipherSeek, Unsigned};
 use core::{pin::Pin, ptr::NonNull};
 use pulp_sdk_rust::*;
@@ -40,7 +39,7 @@ pub struct PulpWrapper {
 pub enum SourceLocation {
     L1,
     L2,
-    Ram(*mut PiDevice),
+    Ram(NonNull<PiDevice>),
 }
 
 impl PulpWrapper {
@@ -62,9 +61,9 @@ impl PulpWrapper {
 
     /// Encrypt / decrypt data in [source] with given key and iv
     ///
-    /// Safety:
+    /// # Safety:
     /// * source location must be correctly specified in [loc]
-    /// * if present, ram device pointer must be valid to read
+    /// * if present, ram device pointer must be valid to read for the whole duration
     pub unsafe fn run<C: StreamCipher + StreamCipherSeek + KeyIvInit>(
         &mut self,
         source: &mut [u8],

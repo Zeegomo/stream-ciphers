@@ -9,6 +9,7 @@ use alloc::boxed::Box;
 use chacha20::ChaCha20;
 use cipher::{IvSizeUser, KeySizeUser, Unsigned};
 use core::pin::Pin;
+use core::ptr::NonNull;
 use generic_array::GenericArray;
 use pulp_sdk_rust::{abort_all, print, GlobalAllocator, PiDevice};
 use pulp_wrapper::{Cluster, PulpWrapper, SourceLocation};
@@ -65,10 +66,10 @@ pub unsafe extern "C" fn encrypt(
 ) {
     let wrapper = (wrapper as *mut PulpWrapper).as_mut().unwrap();
     let data = core::slice::from_raw_parts_mut(data, len);
-    let location = if ram_device.is_null() {
-        SourceLocation::L2
+    let location = if let Some(device) = NonNull::new(ram_device) {
+        SourceLocation::Ram(device)
     } else {
-        SourceLocation::Ram(ram_device)
+        SourceLocation::L2
     };
     let (key_size, iv_size) = match cipher {
         Cipher::ChaCha20 => (
