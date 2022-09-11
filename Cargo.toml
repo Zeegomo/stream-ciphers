@@ -17,6 +17,3 @@ opt-level = 2
 
 [profile.release]
 debug = true
-
-[patch.crates-io]
-inout = { git = 'https://github.com/Zeegomo/utils', rev = "3a6b146faacca2eb8987f5d402e784be2c36dfb0" }
